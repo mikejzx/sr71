@@ -18,8 +18,8 @@ enum uri_protocol
 
 static const char *PROTOCOL_NAMES[PROTOCOL_COUNT] =
 {
-    [PROTOCOL_UNKNOWN] = "",
     [PROTOCOL_NONE] = "",
+    [PROTOCOL_UNKNOWN] = "",
     [PROTOCOL_GEMINI]  = "gemini",
     [PROTOCOL_GOPHER]  = "gopher",
     [PROTOCOL_FINGER]  = "finger",

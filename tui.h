@@ -43,14 +43,22 @@ struct tui_state
 
     // For input prompts
     char input[TUI_INPUT_BUFFER_MAX], input_prompt[TUI_INPUT_PROMPT_MAX];
+    size_t input_len;
     size_t input_caret, input_prompt_len;
     void (*cb_input_complete)(void);
+
+    int cursor_x, cursor_y;
 };
 
 extern struct tui_state *g_tui;
 
 #define tui_printf(...) (dprintf(STDOUT_FILENO, __VA_ARGS__))
-#define tui_cursor_move(x, y) (tui_printf("\x1b[%d;%dH", (y), (x)))
+#define tui_cursor_move(x, y) \
+{ \
+    tui_printf("\x1b[%d;%dH", (y), (x)); \
+    g_tui->cursor_x = x; \
+    g_tui->cursor_y = y; \
+}
 #define tui_say(x) ((void)!write(STDOUT_FILENO, (x), sizeof((x))))
 #define tui_sayn(x, l) ((void)!write(STDOUT_FILENO, (x), (l)))
 

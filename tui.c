@@ -52,6 +52,7 @@ tui_init(void)
 
     g_tui->mode = TUI_MODE_NORMAL;
     g_tui->input_caret = 0;
+    g_tui->input_len = 0;
     g_tui->input_prompt_len = 0;
     g_tui->cb_input_complete = NULL;
 }
@@ -110,12 +111,12 @@ tui_update(void)
                 break;
             case 'd':
             case ('D' ^ 0100):
-                pager_scroll(g_tui->h / 2);
+                pager_scroll(g_tui->h / 4);
                 invalidate = true;
                 break;
             case 'u':
             case ('U' ^ 0100):
-                pager_scroll(g_tui->h / -2);
+                pager_scroll(g_tui->h / -4);
                 invalidate = true;
                 break;
             case 'f':
@@ -154,6 +155,26 @@ tui_update(void)
                 g_tui->cb_input_complete = tui_go_from_input;
             } break;
 
+            // 'e' to edit current page link in a 'go' command
+            case 'e':
+            {
+                struct uri *uri = &g_state->gem.uri;
+                char uri_string[256];
+                size_t uri_strlen =
+                    uri_str(uri, uri_string, sizeof(uri_string), 0);
+
+                next_mode = TUI_MODE_INPUT;
+
+                const char *PROMPT = "go: ";
+                g_tui->input_prompt_len = strlen(PROMPT);
+                strncpy(g_tui->input_prompt, PROMPT, g_tui->input_prompt_len);
+
+                g_tui->input_caret = g_tui->input_len = uri_strlen;
+                strncpy(g_tui->input, uri_string, g_tui->input_len + 1);
+
+                g_tui->cb_input_complete = tui_go_from_input;
+            } break;
+
             // Pressing a number goes into links mode
             case '0':
             case '1':
@@ -168,6 +189,8 @@ tui_update(void)
             // 'J' and 'K' also put us in this mode
             case 'J':
             case 'K':
+            case 'n':
+            case 'p':
             {
                 // Don't switch if there's no bloody links
                 if (!g_pager->link_count) break;
@@ -183,18 +206,19 @@ tui_update(void)
                 // We reset input here; though since on mode change we goto
                 // links_mode_begin label, it will automatically get added
                 g_tui->input_caret = 0;
+                g_tui->input_len = 0;
 
                 // This is for 'J' and 'K' and simply sets the selected link to
                 // be the first one *on the visible screen*, rather than the
                 // first in the entire buffer.  We have to offset it by one (as
                 // the 'J' and 'K' handlers in the link mode will add/subtract
                 // one link respectively).  Bit hacky but it works
-                if (buf == 'J')
+                if (buf == 'J' || buf == 'n')
                 {
                     pager_select_first_link_visible();
                     --g_pager->selected_link_index;
                 }
-                else if (buf == 'K')
+                else if (buf == 'K' || buf == 'p')
                 {
                     pager_select_last_link_visible();
                     ++g_pager->selected_link_index;
@@ -280,6 +304,8 @@ tui_update(void)
             ++g_tui->input_caret;
 
             tui_sayn(&buf, 1);
+
+            tui_cursor_move(x_pos + 1, g_tui->h);
         }
         else if (g_tui->mode == TUI_MODE_PASSWORD)
         {
@@ -316,7 +342,6 @@ tui_update(void)
                 pager_scroll(g_tui->h / -2);
                 invalidate = true;
                 goto exit_block;
-            case 'f':
             case ('F' ^ 0100):
                 pager_scroll(g_tui->h);
                 invalidate = true;
@@ -338,13 +363,14 @@ tui_update(void)
             /* Ctrl-W: clear whole thing */
             case (0100 ^ 'W'):
                 g_tui->input_caret = 0;
+                g_tui->input_len = 0;
                 g_tui->input[0] = '\0';
                 x_pos = min(g_tui->input_prompt_len, g_tui->w);
                 goto update_link_peek;
 
-            // Return or 'l': follow link
+            // Return or 'f': follow link
             case '\n':
-            case 'l':
+            case 'f':
                 // Find the URI that link corresponds to
                 if (g_pager->selected_link_index >= 0 &&
                     g_pager->selected_link_index < g_pager->link_count)
@@ -364,7 +390,7 @@ tui_update(void)
                 next_mode = TUI_MODE_NORMAL;
                 goto exit_block;
 
-            /* Backspace key; move caret backward */
+            /* backspace key; delete and move caret backward */
             case 0x7f:
                 if (g_tui->input_caret <= 0)
                 {
@@ -376,8 +402,13 @@ tui_update(void)
                 tui_say(" ");
                 tui_cursor_move(x_pos - 1, g_tui->h);
                 --g_tui->input_caret;
+                --g_tui->input_len;
 
                 x_pos -= 2;
+                goto update_link_peek;
+
+            /* 'x' delete digit under cursor */
+            case 'x':
                 goto update_link_peek;
 
             /* Escape key (or 'q'): cancel input */
@@ -409,21 +440,29 @@ tui_update(void)
                 g_tui->input_prompt_len = strlen(PROMPT);
                 strncpy(g_tui->input_prompt, PROMPT, g_tui->input_prompt_len);
 
-                g_tui->input_caret = uri_strlen;
-                strncpy(g_tui->input, uri_string, g_tui->input_caret + 1);
+                g_tui->input_caret = g_tui->input_len = uri_strlen;
+                strncpy(g_tui->input, uri_string, g_tui->input_len + 1);
 
                 g_tui->cb_input_complete = tui_go_from_input;
-                goto exit_block;
+            } goto exit_block;
+
+            /* 'h' move caret left */
+            case 'h':
+            {
+                if (g_tui->input_caret == 0) continue;
+                --g_tui->input_caret;
+                tui_cursor_move(x_pos - 1, g_tui->h);
             } goto exit_block;
 
             /* 'J' next link */
             case 'J':
+            case 'n':
                 if (!g_pager->link_count) continue;
 
                 g_pager->selected_link_index =
                     (g_pager->selected_link_index + 1) % g_pager->link_count;
 
-                g_tui->input_caret = snprintf(g_tui->input,
+                g_tui->input_caret = g_tui->input_len = snprintf(g_tui->input,
                     TUI_INPUT_BUFFER_MAX,
                     "%d",
                     g_pager->selected_link_index);
@@ -431,13 +470,14 @@ tui_update(void)
                 // Print the new value
                 x_pos = min(1 + g_tui->input_prompt_len, g_tui->w);
                 tui_cursor_move(x_pos, g_tui->h);
-                tui_sayn(g_tui->input, g_tui->input_caret);
+                tui_sayn(g_tui->input, g_tui->input_len);
                 x_pos += g_tui->input_caret - 1;
 
                 goto update_link_peek;
 
             /* 'K' previous link */
             case 'K':
+            case 'p':
                 if (!g_pager->link_count) continue;
 
                 --g_pager->selected_link_index;
@@ -446,7 +486,7 @@ tui_update(void)
                     g_pager->selected_link_index = g_pager->link_count - 1;
                 }
 
-                g_tui->input_caret = snprintf(g_tui->input,
+                g_tui->input_caret = g_tui->input_len = snprintf(g_tui->input,
                     TUI_INPUT_BUFFER_MAX,
                     "%d",
                     g_pager->selected_link_index);
@@ -454,7 +494,7 @@ tui_update(void)
                 // Print the new value
                 x_pos = min(1 + g_tui->input_prompt_len, g_tui->w);
                 tui_cursor_move(x_pos, g_tui->h);
-                tui_sayn(g_tui->input, g_tui->input_caret);
+                tui_sayn(g_tui->input, g_tui->input_len);
                 x_pos += g_tui->input_caret - 1;
 
                 goto update_link_peek;
@@ -463,7 +503,7 @@ tui_update(void)
             }
 
             // Check that we don't overflow the input
-            if (g_tui->input_caret + 1 >= TUI_INPUT_BUFFER_MAX)
+            if (g_tui->input_len + 1 >= TUI_INPUT_BUFFER_MAX)
             {
                 continue;
             }
@@ -477,6 +517,7 @@ tui_update(void)
                 g_tui->input[0] == '0')
             {
                 g_tui->input_caret = 0;
+                g_tui->input_len = 0;
                 --x_pos;
                 tui_cursor_move(x_pos, g_tui->h);
             }
@@ -484,9 +525,10 @@ tui_update(void)
             g_tui->input[g_tui->input_caret] = buf;
 
             // Add the text to the buffer
-            g_tui->input[g_tui->input_caret + 1] = '\0';
+            g_tui->input[g_tui->input_len + 1] = '\0';
 
             ++g_tui->input_caret;
+            ++g_tui->input_len;
 
             // Print character
             tui_sayn(&buf, 1);
@@ -496,7 +538,7 @@ tui_update(void)
             tui_cursor_move(x_pos + 1, g_tui->h);
             tui_printf("%*s", g_tui->w - x_pos, "");
 
-            if (g_tui->input_caret)
+            if (g_tui->input_len)
             {
                 g_pager->selected_link_index = atoi(g_tui->input);
                 if (g_pager->selected_link_index < g_pager->link_count)
@@ -520,11 +562,17 @@ tui_update(void)
         // Repaint the TUI
         if (invalidate)
         {
+            int cursor_x_prev = g_tui->cursor_x,
+                cursor_y_prev = g_tui->cursor_y;
+
             pager_paint();
 
             g_statline.components[STATUS_LINE_COMPONENT_RIGHT].invalidated
                 = true;
             status_line_paint();
+
+            // This stops cursor flying off when in link mode
+            tui_cursor_move(cursor_x_prev, cursor_y_prev);
         }
 
         if (next_mode)

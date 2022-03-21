@@ -17,6 +17,9 @@ pager_init(void)
     g_pager->visible_buffer.rows = NULL;
     g_pager->visible_buffer_prev.rows = NULL;
 
+    g_pager->link_capacity = 10;
+    g_pager->links = malloc(g_pager->link_capacity * sizeof(struct pager_link));
+
     typesetter_init(&g_pager->typeset);
 }
 
@@ -42,6 +45,8 @@ pager_update_page(const char *content, size_t content_size)
 void
 pager_deinit(void)
 {
+    if (g_pager->links) free(g_pager->links);
+
     if (g_pager->visible_buffer.rows)
     {
         free(g_pager->visible_buffer.rows);
@@ -172,15 +177,10 @@ pager_paint(void)
         // Draw the line
         if (i < g_pager->buffer.line_count - g_pager->scroll)
         {
-            size_t len = line->len;
-            if (len < g_pager->visible_buffer.w)
-            {
-                len = line->bytes;
-            }
-            else
-            {
-                len = g_pager->visible_buffer.w;
-            }
+            // Clamp line to end of visible buffer (this obviously doesn't wrap
+            // the line)
+            line->len = min(g_pager->visible_buffer.w, line->len);
+            line->bytes = utf8_size_w_formats(line->s, line->len);
 
             // Line highlighting
             bool highlighted = false;
@@ -202,7 +202,7 @@ pager_paint(void)
                 }
             }
 
-            tui_sayn(line->s, len);
+            tui_sayn(line->s, line->bytes);
 
             if (highlighted)
             {
@@ -218,10 +218,14 @@ pager_paint(void)
         }
 
         // Clear out the old line part that was here
-        //int clear_count = min(g_pager->visible_buffer_prev.rows[i].bytes,
-        //    g_pager->visible_buffer.w) - line->len;
-        int clear_count =
-            g_pager->visible_buffer_prev.rows[i].bytes - line->len;
+        //int clear_count =
+        //    (int)g_pager->visible_buffer_prev.rows[i].bytes - (int)line->bytes;
+        //clear_count = max(min(clear_count,
+        //    (int)g_pager->visible_buffer.w - (int)line->len),
+        //    0);
+        // TODO FIX THIS SO ONLY NECESSARY CHARS ARE CLEARED
+        int clear_count = max(
+            g_pager->visible_buffer.w - 50 - (int)line->len, 0);
         tui_printf("%*s", clear_count, "");
     }
 
@@ -293,4 +297,25 @@ pager_select_last_link_visible(void)
         g_pager->selected_link_index = i;
         return;
     }
+}
+
+/* Ensure a new link can be added without overflow */
+void
+pager_check_link_capacity(void)
+{
+    if (g_pager->link_count + 1 < g_pager->link_capacity) return;
+
+    // Reallocate links
+    size_t new_cap = (g_pager->link_capacity * 3) / 2;
+    void *tmp = realloc(
+        g_pager->links,
+        new_cap * sizeof(struct pager_link));
+    if (!tmp)
+    {
+        // Failed to allocate
+        fprintf(stderr, "out of memory\n");
+        exit(-1);
+    }
+    g_pager->link_capacity = new_cap;
+    g_pager->links = tmp;
 }

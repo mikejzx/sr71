@@ -4,8 +4,6 @@
 #include "typesetter.h"
 #include "uri.h"
 
-#define MAX_LINKS 128
-
 struct pager_buffer_line
 {
     // Pointer to where in buffer line begins
@@ -73,8 +71,9 @@ struct pager_state
     int scroll;
 
     // List of links on the page
-    struct pager_link links[MAX_LINKS];
+    struct pager_link *links;
     size_t link_count;
+    size_t link_capacity;
     int selected_link_index;
 };
 
@@ -90,5 +89,6 @@ void pager_resized(void);
 void pager_update_page(const char *, size_t);
 void pager_select_first_link_visible(void);
 void pager_select_last_link_visible(void);
+void pager_check_link_capacity(void);
 
 #endif

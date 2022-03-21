@@ -36,7 +36,9 @@ uri_parse(const char *uri, size_t uri_len)
     int path_pos = 0;
     if (protocol_name_len > 0)
     {
-        path_pos = strcspn(uri + protocol_name_len, "/") + protocol_name_len;
+        for (path_pos = protocol_name_len;
+            path_pos < uri_len && uri[path_pos] != '/';
+            ++path_pos);
     }
 
     // Use path position instead of colon (if no port was given)
@@ -83,6 +85,8 @@ uri_str(
     size_t buf_size,
     enum uri_string_flags flags)
 {
+    if (!uri) return 0;
+
     // Get scheme string
     char scheme[PROTOCOL_NAME_MAX + strlen("://")];
     scheme[0] = '\0';
