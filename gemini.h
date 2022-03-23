@@ -11,13 +11,6 @@
 
 struct gemini
 {
-    // Current URI
-    struct uri uri;
-
-    // Buffer used for receiving data
-    char *recv_buffer;
-    size_t recv_buffer_size;
-
     SSL *ssl;
     SSL_CTX *ctx;
     int sock;

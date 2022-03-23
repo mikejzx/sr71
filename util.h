@@ -6,67 +6,6 @@
 #define max(x, y) \
     ((x) > (y) ? (x) : (y))
 
-#if 0
-/*
- * UTF-8 decoding function
- * This is a bit stupid right now as it does a malloc.  Perhaps abstract it
- * away a little
- */
-static inline
-wchar_t *utf8_decode(const char *s)
-{
-    size_t len;
-    wchar_t *ws;
-    len = mbstowcs(NULL, s, 0);
-
-    if (!(ws = malloc((len + 1) * sizeof(*ws))))
-    {
-        return NULL;
-    }
-
-    if (mbstowcs(ws, s, len) != (size_t)-1)
-    {
-        return ws;
-    }
-    free(ws);
-    return NULL;
-}
-
-/*
- * Size of string without formatting chars
- * This needs to be seriously re-written to get rid of all these stupid goto's
- * https://gist.github.com/jart/b9104dd959f2dd65ecdcb5ce69d332e6
- */
-static inline size_t
-text_length(const char *str)
-{
-    int w;
-    size_t sz = 0, i = 0;
-    wchar_t *wcs = utf8_decode(str);
-count:
-    if (!wcs || wcs[i] == 0)
-    {
-        if (wcs) free(wcs);
-        return sz;
-    }
-
-    if (wcs[i] == '\e') goto skip;
-
-    ++i;
-    w = wcwidth(wcs[i]);
-    sz += w >= 0 ? w : 0;
-    goto count;
-
-skip:
-    if (wcs[i] != 'm')
-    {
-        ++i;
-        goto skip;
-    }
-    goto count;
-}
-#endif
-
 /* Count number of code points in UTF-8 string */
 /* https://stackoverflow.com/a/32936928 */
 static inline size_t
@@ -128,7 +67,7 @@ utf8_size_w_formats(const char *s, size_t l)
             continue;
         }
 
-        if (*s == '\e')
+        if (*s == '\x1b')
         {
             is_escape = true;
             continue;

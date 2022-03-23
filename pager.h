@@ -86,7 +86,7 @@ void pager_scroll_top(void);
 void pager_scroll_bottom(void);
 void pager_paint(void);
 void pager_resized(void);
-void pager_update_page(const char *, size_t);
+void pager_update_page(void);
 void pager_select_first_link_visible(void);
 void pager_select_last_link_visible(void);
 void pager_check_link_capacity(void);

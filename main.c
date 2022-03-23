@@ -5,6 +5,7 @@
 #include "tui.h"
 
 struct state *g_state;
+struct recv_buffer *g_recv;
 
 void program_exited(void);
 
@@ -12,6 +13,12 @@ int
 main(void)
 {
     g_state = calloc(1, sizeof(struct state));
+    g_recv = &g_state->recv_buffer;
+
+    // Create initial raw receive buffer
+    g_recv->capacity = 4096;
+    g_recv->b = malloc(g_recv->capacity);
+    g_recv->size = 0;
 
     sighandle_register();
 
@@ -22,6 +29,7 @@ main(void)
     gemini_init();
 
     // Set some temporary content
+#if 0
     static const char *PAGER_CONTENT =
         "This is a test\n"
         "Line 2\n"
@@ -98,9 +106,36 @@ main(void)
         "\n"
         "UTF-8 test: ちゃぶ台返し (╯°□°)╯𐄻︵ ̲┻̲━̲┻̲ ̲o 𐌰𐌱𐌲𐌳𐌴𐌵𐌶𐌷\n"
         "test end of line";
+#else
+    static const char *PAGER_CONTENT =
+        "# gemini client\n"
+        "\n"
+        "## Built with:\n"
+        "* SSL: " OPENSSL_VERSION_TEXT "\n"
+        "\n"
+        "This is a test paragraph\n"
+        "\n"
+        "### List test\n"
+        "* List item 0\n"
+        "* List item 1\n"
+        "* List item 2\n"
+        "* List item 3\n"
+        "\n"
+        "### Some links\n"
+        "=> gemini://gemini.circumlunar.space/ Gemini Homepage\n"
+        "=> gemini://gemini.circumlunar.space/docs Gemini Documentation\n"
+        "=> gemini://example.com/\n"
+        "=> file:///home/mike/pages/gemtext/gemini.circumlunar.space/home.gmi Local file test\n"
+        "=> gemini://example.com/ A link with a very long name that will wrap around and hopefully work properly\n"
+        "=> gemini://example.com/\n"
+        "\n"
+        "This is a test paragraph\n";
+#endif
+    g_recv->size = strlen(PAGER_CONTENT) + 1;
+    memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
 
     // Typeset the content
-    pager_update_page(PAGER_CONTENT, strlen(PAGER_CONTENT) + 1);
+    pager_update_page();
 
     for(;!g_sigint_caught;)
     {
@@ -119,5 +154,6 @@ program_exited(void)
 
     tui_cleanup();
 
+    free(g_recv->b);
     free(g_state);
 }

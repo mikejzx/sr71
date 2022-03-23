@@ -12,26 +12,28 @@ enum uri_protocol
     PROTOCOL_GEMINI,
     PROTOCOL_GOPHER,
     PROTOCOL_FINGER,
+    PROTOCOL_FILE,
 
     PROTOCOL_COUNT
 };
 
 static const char *PROTOCOL_NAMES[PROTOCOL_COUNT] =
 {
-    [PROTOCOL_NONE] = "",
+    [PROTOCOL_NONE]    = "",
     [PROTOCOL_UNKNOWN] = "",
     [PROTOCOL_GEMINI]  = "gemini",
     [PROTOCOL_GOPHER]  = "gopher",
     [PROTOCOL_FINGER]  = "finger",
+    [PROTOCOL_FILE]    = "file",
 };
 
 /* Lookup a protocol from string */
 static inline enum uri_protocol
-lookup_protocol(const char *s)
+lookup_protocol(const char *s, size_t l)
 {
     for (int i = 0; i < PROTOCOL_COUNT; ++i)
     {
-        if (strcmp(PROTOCOL_NAMES[i], s) == 0)
+        if (strncmp(s, PROTOCOL_NAMES[i], l) == 0)
         {
             return (enum uri_protocol)i;
         }
@@ -53,6 +55,9 @@ enum uri_string_flags
     // Essentially this should make the hostname appear in a brighter colour
     // than the other parts of the URI
     URI_FLAGS_FANCY_BIT = 2,
+
+    // Do not include protocol in string
+    URI_FLAGS_NO_PROTOCOL_BIT = 4,
 };
 
 struct uri

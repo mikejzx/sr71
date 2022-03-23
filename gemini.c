@@ -19,7 +19,6 @@ gemini_deinit(void)
 {
     struct gemini *const gem = &g_state->gem;
 
-    if (gem->recv_buffer) free(gem->recv_buffer);
     if (gem->sock) close(gem->sock);
 
     SSL_free(gem->ssl);
@@ -78,10 +77,10 @@ gemini_request(struct uri *uri)
     for (struct addrinfo *i = res; i != NULL; i = i->ai_next)
     {
         // TODO support for IPv6-only servers?
-        static char addr_str[INET6_ADDRSTRLEN];
+        //static char addr_str[INET6_ADDRSTRLEN];
         if (i->ai_addr->sa_family == AF_INET)
         {
-            struct sockaddr_in *p = (struct sockaddr_in *)i->ai_addr;
+            //struct sockaddr_in *p = (struct sockaddr_in *)i->ai_addr;
             server_addr = i;
             break;
         }
@@ -186,13 +185,6 @@ gemini_request(struct uri *uri)
     tui_cmd_status_prepare();
     tui_printf("Server responded: %s", response_header);
 
-    // Create recv buffer if we haven't already
-    if (!gem->recv_buffer)
-    {
-        gem->recv_buffer_size = 4096;
-        gem->recv_buffer = malloc(gem->recv_buffer_size);
-    }
-
     // Interpret response code
     switch(response_header[0])
     {
@@ -206,16 +198,11 @@ gemini_request(struct uri *uri)
             while ((response_code =
                 SSL_read(gem->ssl, chunk, sizeof(chunk))) > 0)
             {
-                if (recv_bytes + response_code >= gem->recv_buffer_size)
-                {
-                    // Reallocate
-                    size_t new_size = (recv_bytes * 3) / 2;
-                    gem->recv_buffer = realloc(gem->recv_buffer, new_size);
-                    gem->recv_buffer_size = new_size;
-                }
-                memcpy(gem->recv_buffer + recv_bytes, chunk, response_code);
+                recv_buffer_check_size(recv_bytes + response_code);
+                memcpy(g_recv->b + recv_bytes, chunk, response_code);
                 recv_bytes += response_code;
             }
+            g_recv->size = recv_bytes;
             if (response_code < 0)
             {
                 tui_cmd_status_prepare();
@@ -224,10 +211,10 @@ gemini_request(struct uri *uri)
             }
 
             // Update URI status
-            memcpy(&gem->uri, uri, sizeof(struct uri));
+            memcpy(&g_state->uri, uri, sizeof(struct uri));
 
             // Update the content in the pager!
-            pager_update_page(gem->recv_buffer, recv_bytes);
+            pager_update_page();
 
             tui_cmd_status_prepare();
             if (recv_bytes < 1024)
@@ -257,13 +244,13 @@ gemini_request(struct uri *uri)
                 response_header_len - strlen("XX "));
 
             // Check the protocol and warn if it's cross
-            if (gem->uri.protocol != redirect_uri.protocol)
+            if (g_state->uri.protocol != redirect_uri.protocol)
             {
                 // TODO: warn about cross-protocol redirects
             }
 
             // Resolve URI in case it is relative
-            uri_abs(&gem->uri, &redirect_uri);
+            uri_abs(&g_state->uri, &redirect_uri);
 
             // Perform redirect
             tui_cmd_status_prepare();
@@ -281,4 +268,6 @@ close_socket:
     // Close socket
     close(gem->sock);
     gem->sock = 0;
+
+    return 0;
 }

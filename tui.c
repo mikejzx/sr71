@@ -111,12 +111,12 @@ tui_update(void)
                 break;
             case 'd':
             case ('D' ^ 0100):
-                pager_scroll(g_tui->h / 4);
+                pager_scroll(g_tui->h / 2);
                 invalidate = true;
                 break;
             case 'u':
             case ('U' ^ 0100):
-                pager_scroll(g_tui->h / -4);
+                pager_scroll(g_tui->h / -2);
                 invalidate = true;
                 break;
             case 'f':
@@ -146,11 +146,14 @@ tui_update(void)
 
                 const char *PROMPT = "go: ";
                 g_tui->input_prompt_len = strlen(PROMPT);
-                strncpy(g_tui->input_prompt, PROMPT, g_tui->input_prompt_len);
+                strncpy(g_tui->input_prompt, PROMPT,
+                    g_tui->input_prompt_len + 1);
 
                 const char *INPUT_DEFAULT = "gemini://";
-                g_tui->input_caret = strlen(INPUT_DEFAULT);
-                strncpy(g_tui->input, INPUT_DEFAULT, g_tui->input_caret + 1);
+                g_tui->input_len = strlen(INPUT_DEFAULT);
+                g_tui->input_caret = g_tui->input_len;
+                strncpy(g_tui->input, INPUT_DEFAULT,
+                    g_tui->input_len + 1);
 
                 g_tui->cb_input_complete = tui_go_from_input;
             } break;
@@ -158,7 +161,7 @@ tui_update(void)
             // 'e' to edit current page link in a 'go' command
             case 'e':
             {
-                struct uri *uri = &g_state->gem.uri;
+                struct uri *uri = &g_state->uri;
                 char uri_string[256];
                 size_t uri_strlen =
                     uri_str(uri, uri_string, sizeof(uri_string), 0);
@@ -167,7 +170,8 @@ tui_update(void)
 
                 const char *PROMPT = "go: ";
                 g_tui->input_prompt_len = strlen(PROMPT);
-                strncpy(g_tui->input_prompt, PROMPT, g_tui->input_prompt_len);
+                strncpy(g_tui->input_prompt, PROMPT,
+                    g_tui->input_prompt_len + 1);
 
                 g_tui->input_caret = g_tui->input_len = uri_strlen;
                 strncpy(g_tui->input, uri_string, g_tui->input_len + 1);
@@ -201,7 +205,8 @@ tui_update(void)
                 // 'follow link X ? (scheme://the.url/that/link/corresponds/to)
                 const char *PROMPT = "follow link ";
                 g_tui->input_prompt_len = strlen(PROMPT);
-                strncpy(g_tui->input_prompt, PROMPT, g_tui->input_prompt_len);
+                strncpy(g_tui->input_prompt, PROMPT,
+                    g_tui->input_prompt_len + 1);
 
                 // We reset input here; though since on mode change we goto
                 // links_mode_begin label, it will automatically get added
@@ -279,19 +284,21 @@ tui_update(void)
                 tui_say(" ");
                 tui_cursor_move(x_pos - 1, g_tui->h);
                 --g_tui->input_caret;
+                --g_tui->input_len;
 
                 continue;
             }
             if (buf == '\x1b')
             {
                 /* Escape key; cancel input */
+                tui_clear_cmd();
                 next_mode = TUI_MODE_NORMAL;
                 goto exit_block;
             }
             // TODO: arrow keys
 
             // Check that we don't overflow the input
-            if (g_tui->input_caret + 1 >= TUI_INPUT_BUFFER_MAX)
+            if (g_tui->input_len + 1 >= TUI_INPUT_BUFFER_MAX)
             {
                 continue;
             }
@@ -302,6 +309,7 @@ tui_update(void)
             g_tui->input[g_tui->input_caret + 1] = '\0';
 
             ++g_tui->input_caret;
+            ++g_tui->input_len;
 
             tui_sayn(&buf, 1);
 
@@ -416,7 +424,6 @@ tui_update(void)
             case 'q':
                 tui_clear_cmd();
                 g_pager->selected_link_index = -1;
-                invalidate = true;
                 next_mode = TUI_MODE_NORMAL;
                 goto exit_block;
 
@@ -438,7 +445,8 @@ tui_update(void)
 
                 const char *PROMPT = "go: ";
                 g_tui->input_prompt_len = strlen(PROMPT);
-                strncpy(g_tui->input_prompt, PROMPT, g_tui->input_prompt_len);
+                strncpy(g_tui->input_prompt, PROMPT,
+                    g_tui->input_prompt_len + 1);
 
                 g_tui->input_caret = g_tui->input_len = uri_strlen;
                 strncpy(g_tui->input, uri_string, g_tui->input_len + 1);
@@ -656,19 +664,18 @@ static void
 tui_go_from_input(void)
 {
     // Parse the URI.
-    size_t input_len = strlen(g_tui->input);
-    struct uri uri = uri_parse(g_tui->input, input_len);
+    struct uri uri = uri_parse(g_tui->input, g_tui->input_len);
 
     // We need to make sure that there is a protocol or else the URI parse
     // will cause problems
     if (uri.protocol == PROTOCOL_NONE)
     {
         // Re-parse it with a 'gemini://' prefix
-        char tmp[input_len + 1];
-        strncpy(tmp, g_tui->input, input_len);
-        input_len = snprintf(g_tui->input, TUI_INPUT_BUFFER_MAX,
+        char tmp[g_tui->input_len + 1];
+        strncpy(tmp, g_tui->input, g_tui->input_len);
+        g_tui->input_len = snprintf(g_tui->input, TUI_INPUT_BUFFER_MAX,
             "gemini://%s", tmp);
-        uri = uri_parse(g_tui->input, input_len);
+        uri = uri_parse(g_tui->input, g_tui->input_len);
     }
     tui_go_to_uri(&uri);
 }
@@ -688,13 +695,15 @@ tui_go_to_uri(struct uri *uri)
         return;
     }
 
-    // Assume Gemini if no scheme is given
+    // Assume Gemini if no scheme given
     if (uri->protocol == PROTOCOL_NONE)
     {
         uri->protocol = PROTOCOL_GEMINI;
     }
 
-    if (uri->hostname[0] == '\0')
+    // All protocols except file need a hostname
+    if (uri->protocol != PROTOCOL_FILE &&
+        uri->hostname[0] == '\0')
     {
         tui_say("Invalid URI");
         return;
@@ -703,12 +712,49 @@ tui_go_to_uri(struct uri *uri)
     // Show status message
     tui_printf("Loading %s ...", g_tui->input);
 
-    // Attempt to connect to site
+    // Handle protocol/requests
     switch (uri->protocol)
     {
     case PROTOCOL_GEMINI:
     {
         gemini_request(uri);
+    } break;
+
+    case PROTOCOL_FILE:
+    {
+        // Local file; try to open it.
+
+        static char file_path[FILENAME_MAX];
+        uri_str(uri, file_path, sizeof(file_path), URI_FLAGS_NO_PROTOCOL_BIT);
+        FILE *file = fopen(file_path, "r");
+        if (!file)
+        {
+            tui_cmd_status_prepare();
+            tui_say("No such file or directory");
+            break;
+        }
+
+        // TODO directory listings
+
+        tui_cmd_status_prepare();
+        tui_printf("Loading local file %s", file_path);
+
+        // Read size of file and resize buffer if needed
+        fseek(file, 0, SEEK_END);
+        size_t len = ftell(file);
+        recv_buffer_check_size(len);
+
+        // Read file
+        fseek(file, 0, SEEK_SET);
+        if (fread(g_recv->b, len, 1, file) > 0)
+        {
+            // Update pager content
+            g_recv->size = len;
+            memcpy(&g_state->uri, uri, sizeof(struct uri));
+            pager_update_page();
+        }
+
+        fclose(file);
     } break;
 
     default: break;

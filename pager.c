@@ -10,7 +10,6 @@ static void pager_alloc_visible_buffer(struct pager_visible_buffer *, int);
 void
 pager_init(void)
 {
-    int i;
     g_pager = &g_state->pager;
     memset(g_pager, 0, sizeof(struct pager_state));
 
@@ -24,14 +23,14 @@ pager_init(void)
 }
 
 void
-pager_update_page(const char *content, size_t content_size)
+pager_update_page(void)
 {
     g_pager->link_count = 0;
     g_pager->selected_link_index = -1;
     g_pager->scroll = 0;
 
     // Copy page data into the typesetter
-    typesetter_reinit(&g_pager->typeset, content, content_size);
+    typesetter_reinit(&g_pager->typeset);
 
     // Typeset the content
     typeset_gemtext(&g_pager->typeset,
@@ -95,10 +94,6 @@ pager_resized(void)
 
         // Call it a day if there was no previous buffer
         if (g_pager->visible_buffer_prev.h == 0) break;
-
-        // The text we are trying to find
-        const char *old_buffer_text = g_pager->visible_buffer_prev.rows[0].s;
-        size_t old_buffer_text_len = g_pager->visible_buffer_prev.rows[0].bytes;
 
         // Iterate over the rest of the lines with this index.
         struct pager_buffer_line *l;
@@ -174,13 +169,18 @@ pager_paint(void)
 
         struct pager_buffer_line *const line = &g_pager->visible_buffer.rows[i];
 
+        int clear_count = (int)g_pager->visible_buffer_prev.rows[i].len;
+        tui_printf("%*s", clear_count, "");
+
+        tui_cursor_move(0, i + 1);
+
         // Draw the line
         if (i < g_pager->buffer.line_count - g_pager->scroll)
         {
             // Clamp line to end of visible buffer (this obviously doesn't wrap
             // the line)
-            line->len = min(g_pager->visible_buffer.w, line->len);
-            line->bytes = utf8_size_w_formats(line->s, line->len);
+            //line->len = min(g_pager->visible_buffer.w, line->len);
+            //line->bytes = utf8_size_w_formats(line->s, line->len);
 
             // Line highlighting
             bool highlighted = false;
@@ -224,9 +224,10 @@ pager_paint(void)
         //    (int)g_pager->visible_buffer.w - (int)line->len),
         //    0);
         // TODO FIX THIS SO ONLY NECESSARY CHARS ARE CLEARED
-        int clear_count = max(
-            g_pager->visible_buffer.w - 50 - (int)line->len, 0);
-        tui_printf("%*s", clear_count, "");
+        //int clear_count = max(
+        //    g_pager->visible_buffer.w - 50 - (int)line->len, 0);
+        //int clear_count = max((int)g_pager->visible_buffer_prev.rows[i].len - (int)line->len, 0);
+        //tui_printf("%*s", clear_count, "");
     }
 
     // Swap pointers to store old rows so we know what to clear on next paint

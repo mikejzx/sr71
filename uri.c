@@ -16,7 +16,7 @@ uri_parse(const char *uri, size_t uri_len)
     {
         char protocol_name[PROTOCOL_NAME_MAX];
         strncpy(protocol_name, uri, (size_t)colon_pos);
-        result.protocol = lookup_protocol(protocol_name);
+        result.protocol = lookup_protocol(protocol_name, colon_pos);
         protocol_name_len = (size_t)colon_pos + 3;
     }
 
@@ -90,8 +90,9 @@ uri_str(
     // Get scheme string
     char scheme[PROTOCOL_NAME_MAX + strlen("://")];
     scheme[0] = '\0';
-    if (uri->protocol != PROTOCOL_NONE ||
-        uri->protocol != PROTOCOL_UNKNOWN)
+    if ((flags & ~URI_FLAGS_NO_PROTOCOL_BIT) &&
+        (uri->protocol != PROTOCOL_NONE ||
+        uri->protocol != PROTOCOL_UNKNOWN))
     {
         strcpy(scheme, PROTOCOL_NAMES[uri->protocol]);
         strcat(scheme, "://");

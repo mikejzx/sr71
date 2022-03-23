@@ -28,6 +28,7 @@ sighandle_register(void)
 {
     // Register signal termination and interrupt handlers
     struct sigaction sigact;
+    memset(&sigact, 0, sizeof(sigact));
     sigact.sa_handler = handle_sigint_sigterm;
     sigaction(SIGINT, &sigact, NULL);
     sigaction(SIGTERM, &sigact, NULL);

@@ -1,2 +1,5 @@
 gem
-valgrind-run.sh
+valgrind-out*
+*.d
+*.o
+patches/*

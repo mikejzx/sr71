@@ -13,20 +13,14 @@ typesetter_init(struct typesetter *t)
 
 /* Initialise typesetter with raw content data */
 void
-typesetter_reinit(
-    struct typesetter *t,
-    const char *content,
-    size_t content_size)
+typesetter_reinit(struct typesetter *t)
 {
-    t->raw = content;
-    t->raw_size = content_size;
-
     // Count lines
     size_t old_line_count = t->raw_line_count;
     t->raw_line_count = 0;
-    for (int i = 0; i < content_size; ++i)
+    for (int i = 0; i < g_recv->size; ++i)
     {
-        if (t->raw[i] == '\n' || i == content_size - 1) ++t->raw_line_count;
+        if (g_recv->b[i] == '\n' || i == g_recv->size - 1) ++t->raw_line_count;
     }
 
     // Allocate for lines
@@ -44,14 +38,14 @@ typesetter_reinit(
 
     // Set line points in raw buffer
     int l = 0, l_prev = -1;
-    for (int i = 0; i < content_size; ++i)
+    for (int i = 0; i < g_recv->size; ++i)
     {
-        if (t->raw[i] != '\n' && i != content_size - 1) continue;
+        if (g_recv->b[i] != '\n' && i != g_recv->size - 1) continue;
 
-        t->raw_lines[l].s = &t->raw[l_prev + 1];
+        t->raw_lines[l].s = &g_recv->b[l_prev + 1];
         t->raw_lines[l].bytes = i - l_prev - 1;
         t->raw_lines[l].len = utf8_strnlen_w_formats(
-            &t->raw[l_prev + 1],
+            &g_recv->b[l_prev + 1],
             t->raw_lines[l].bytes);
 
         l_prev = i;
@@ -89,11 +83,11 @@ typeset_gemtext(
     // Allocate space for buffer if needed
     if (!b->b)
     {
-        b->b = malloc(t->raw_size);
+        b->b = malloc(g_recv->size);
     }
-    else if (b->size < t->raw_size)
+    else if (b->size < g_recv->size)
     {
-        b->size = t->raw_size;
+        b->size = g_recv->size;
         if (b->b) free(b->b);
         b->b = malloc(b->size);
     }
@@ -171,8 +165,12 @@ typeset_gemtext(
         line_started = false; \
         line->len = utf8_strnlen_w_formats(line->s, line->bytes); \
         line->raw_dist = gemtext.raw_dist; \
-        if ((b->line_count + 1) * sizeof(struct pager_buffer_line) > \
-            b->lines_capacity) break; \
+        if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >= \
+            b->lines_capacity) \
+        { \
+            /* just abort if line count gets stupid (due to tiny widths */ \
+            return; \
+        } \
         ++b->line_count; \
         ++line; \
     } while(0)
@@ -220,7 +218,8 @@ typeset_gemtext(
         LINE_START();
 
         // Check for preformatting
-        if (strncmp(rawline->s, "```", strlen("```")) == 0)
+        if (rawline->bytes > strlen("```") &&
+            strncmp(rawline->s, "```", strlen("```")) == 0)
         {
             // Empty line
             LINE_FINISH();
@@ -242,7 +241,7 @@ typeset_gemtext(
         // Check for headings
         int heading_level = 0;
         for (const char *x = rawline->s;
-            *x == '#' && x < (rawline->s + rawline->bytes);
+            x < (rawline->s + rawline->bytes) && *x == '#';
             ++heading_level, ++x);
         switch(heading_level)
         {
@@ -268,7 +267,8 @@ typeset_gemtext(
         }
 
         // Parse links
-        if (strncmp(rawline->s, "=>", strlen("=>")) == 0)
+        if (rawline->bytes > strlen("=>") &&
+            strncmp(rawline->s, "=>", strlen("=>")) == 0)
         {
             pager_check_link_capacity();
             size_t l_index = g_pager->link_count++;
@@ -300,7 +300,7 @@ typeset_gemtext(
             // highlight on selection
             struct pager_link *l = &g_pager->links[l_index];
             l->uri = uri_parse(l_uri, l_uri_len);
-            uri_abs(&g_state->gem.uri, &l->uri);
+            uri_abs(&g_state->uri, &l->uri);
             l->buffer_loc = buffer_pos;
             l->line_index = b->line_count;
             // ... note len is set below printing string
@@ -318,7 +318,8 @@ typeset_gemtext(
         }
 
         // Parse lists
-        if (strncmp(rawline->s, "* ", strlen("* ")) == 0)
+        if (rawline->bytes > strlen("* ") &&
+            strncmp(rawline->s, "* ", strlen("* ")) == 0)
         {
             gemtext.indent = 1;
             gemtext.is_list = true;
@@ -431,7 +432,7 @@ typeset_gemtext(
 
     // Replace all tabs with spaces, as we can't render them properly right now
     // (without really breaking the rendering code)
-    for (char *c = b->b; c < b->b + b->size; ++c)
+    for (char *c = b->b; c < buffer_pos; ++c)
     {
         if (*c == '\t') *c = ' ';
     }

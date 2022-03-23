@@ -37,7 +37,7 @@ status_line_paint(void)
         case STATUS_LINE_COMPONENT_LEFT:
         {
             // Just display page URI for now
-            c->bytes = uri_str(&g_state->gem.uri,
+            c->bytes = uri_str(&g_state->uri,
                 text, sizeof(text), URI_FLAGS_NONE);
             c->bytes = strnlen(text, sizeof(text));
             c->len = utf8_strnlen_w_formats(text, c->bytes);
