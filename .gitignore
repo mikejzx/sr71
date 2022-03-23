@@ -3,3 +3,4 @@ valgrind-out*
 *.d
 *.o
 patches/*
+*.gch

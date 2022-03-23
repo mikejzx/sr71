@@ -78,7 +78,7 @@ typeset_gemtext(
 
     // Avoid errors and memory issues by just not rendering at all if the width
     // is stupidly small
-    if (width_total < 15) return;
+    if (width_total < 10) return;
 
     // Allocate space for buffer if needed
     if (!b->b)
@@ -120,6 +120,8 @@ typeset_gemtext(
 
     // Reset buffer state before we re-write it
     b->line_count = 0;
+
+    // TODO: don't re-parse links on every update?
     g_pager->link_count = 0;
 
     // Position in buffer that we're up to
@@ -131,6 +133,10 @@ typeset_gemtext(
         bool is_verbatim;
         bool is_list;
         int indent;
+
+        // This is extra indent, but doesn't apply to first line in wrapped
+        // lines
+        int hang;
 
         // Distance that our current line is from the beginning of it's raw
         // line (in case of wrapping)
@@ -174,8 +180,11 @@ typeset_gemtext(
         ++b->line_count; \
         ++line; \
     } while(0)
-#define LINE_INDENT() \
-    LINE_PRINTF("%*s", gemtext.indent, "");
+#define LINE_INDENT(do_hang) \
+    LINE_PRINTF("%*s", \
+        gemtext.indent + \
+            ((do_hang) ? gemtext.hang : 0), \
+        "");
 #define LINE_STRNCPY(str, len) \
     do \
     { \
@@ -214,11 +223,14 @@ typeset_gemtext(
         // Reset raw distance for sub-lines on this line.
         gemtext.raw_dist = 0;
 
+        // Reset hang
+        gemtext.hang = 0;
+
         // Start a new line
         LINE_START();
 
         // Check for preformatting
-        if (rawline->bytes > strlen("```") &&
+        if (rawline->bytes >= strlen("```") &&
             strncmp(rawline->s, "```", strlen("```")) == 0)
         {
             // Empty line
@@ -231,7 +243,7 @@ typeset_gemtext(
         {
             // Print text verbatim
             gemtext.indent = 1;
-            LINE_INDENT();
+            LINE_INDENT(false);
             LINE_STRNCPY(rawline->s, rawline->bytes);
             LINE_FINISH();
             gemtext.indent = 0;
@@ -303,18 +315,19 @@ typeset_gemtext(
             uri_abs(&g_state->uri, &l->uri);
             l->buffer_loc = buffer_pos;
             l->line_index = b->line_count;
-            // ... note len is set below printing string
+            l->buffer_loc_len = l_title_len;
 
-            // Create the string
-            LINE_PRINTF(" [%d] %.*s",
-                (int)l_index,
-                (int)l_title_len,
-                l_title);
+            // This is so that text wrapping will work for the link title.  We
+            // want to print from where the title string starts if it exists
+            // (if it doesn't we print from where the URI string is).
+            gemtext.raw_bytes_skip = l_title - rawline->s;
 
-            // A bit dodgey but it works
-            l->buffer_loc_len = LINE_PRINTF_N_BYTES;
+            // Print link prefix
+            LINE_PRINTF(" [%d] ", (int)l_index);
 
-            goto finish;
+            l->buffer_loc_len += LINE_PRINTF_N_BYTES;
+
+            gemtext.hang = LINE_PRINTF_N_BYTES;
         }
 
         // Parse lists
@@ -324,14 +337,14 @@ typeset_gemtext(
             gemtext.indent = 1;
             gemtext.is_list = true;
         }
-        else
+        else if (gemtext.is_list)
         {
             gemtext.is_list = false;
             gemtext.indent = 0;
         }
 
         // Apply indent
-        LINE_INDENT();
+        LINE_INDENT(false);
 
         if (gemtext.is_list)
         {
@@ -405,7 +418,7 @@ typeset_gemtext(
                     LINE_FINISH();
                     chars_this_column = 0;
                     LINE_START();
-                    LINE_INDENT();
+                    LINE_INDENT(true);
 
                     // Remove trailing whitespace
                     for (; *c_prev == ' '; ++c_prev);
@@ -420,7 +433,6 @@ typeset_gemtext(
             }
         }
 
-    finish:
         if (gemtext.need_clear_esc)
         {
             LINE_STRNCPY_LIT("\x1b[0m");
@@ -436,12 +448,4 @@ typeset_gemtext(
     {
         if (*c == '\t') *c = ' ';
     }
-
-    return;
-#if 0
-abort:
-    // Out of buffer space! TODO avoid this somehow
-    tui_cmd_status_prepare();
-    tui_say("typeset failed: out of buffer space! (FIXME)");
-#endif
 }

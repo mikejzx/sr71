@@ -40,7 +40,9 @@ status_line_paint(void)
             c->bytes = uri_str(&g_state->uri,
                 text, sizeof(text), URI_FLAGS_NONE);
             c->bytes = strnlen(text, sizeof(text));
-            c->len = utf8_strnlen_w_formats(text, c->bytes);
+            c->len = min(utf8_strnlen_w_formats(text, c->bytes),
+                max(g_tui->w - 4, 0));
+            c->bytes = utf8_size_w_formats(text, c->len);
             x_pos = 1;
         } break;
 
@@ -76,7 +78,6 @@ status_line_paint(void)
         tui_say("\x1b[0m");
 
         // Fill over previous text
-        // This won't work with right-aligned component just yet though (TODO)
         if (cid == STATUS_LINE_COMPONENT_RIGHT)
         {
             tui_cursor_move(g_tui->w - (int)c->len_prev + 1, g_tui->h - 1);

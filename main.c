@@ -20,6 +20,8 @@ main(void)
     g_recv->b = malloc(g_recv->capacity);
     g_recv->size = 0;
 
+    history_init();
+
     sighandle_register();
 
     pager_init();
@@ -29,7 +31,7 @@ main(void)
     gemini_init();
 
     // Set some temporary content
-#if 0
+#if 1
     static const char *PAGER_CONTENT =
         "This is a test\n"
         "Line 2\n"
@@ -135,7 +137,7 @@ main(void)
     memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
 
     // Typeset the content
-    pager_update_page();
+    pager_update_page(-1, 0);
 
     for(;!g_sigint_caught;)
     {
@@ -150,9 +152,16 @@ main(void)
 void
 program_exited(void)
 {
+    // Only exit once
+    static bool exited = false;
+    if (exited) return;
+    exited = true;
+
     gemini_deinit();
 
     tui_cleanup();
+
+    history_deinit();
 
     free(g_recv->b);
     free(g_state);

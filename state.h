@@ -5,6 +5,7 @@
 #include "pager.h"
 #include "gemini.h"
 //#include "gopher.h"
+#include "history.h"
 
 struct state
 {
@@ -33,10 +34,8 @@ struct state
     struct gemini gem;
     //struct gopher ph;
 
-    // List of open tabs
-    // struct page_tab *tabs;
-    // int tab_count;
-    // int tab_capacity;
+    // History stack (for undo/redo)
+    struct history_stack hist;
 };
 
 extern struct state *g_state;

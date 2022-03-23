@@ -93,11 +93,16 @@ tui_update(void)
         if (g_tui->mode == TUI_MODE_NORMAL)
         {
             // Don't parse escapes or new-lines
-            if (buf == '\n' || buf == '\x1b') continue;
+            if (buf == '\n') continue;
 
             // Handle input
             switch (buf)
             {
+            case '\x1b':
+                // Deselect selected link
+                g_pager->selected_link_index = -1;
+                break;
+
             // Vertical motion
             case 'j':
             case ('E' ^ 0100):
@@ -119,12 +124,10 @@ tui_update(void)
                 pager_scroll(g_tui->h / -2);
                 invalidate = true;
                 break;
-            case 'f':
             case ('F' ^ 0100):
                 pager_scroll(g_tui->h);
                 invalidate = true;
                 break;
-            case 'b':
             case ('B' ^ 0100):
                 pager_scroll(-g_tui->h);
                 invalidate = true;
@@ -158,6 +161,22 @@ tui_update(void)
                 g_tui->cb_input_complete = tui_go_from_input;
             } break;
 
+            // 'f' follow selected link
+            case 'f':
+            {
+                // Make sure we have a link to follow
+                if (g_pager->selected_link_index < 0 &&
+                    g_pager->selected_link_index >= g_pager->link_count)
+                {
+                    break;
+                }
+
+                // Find the URI that link corresponds to, and follow
+                struct uri *uri =
+                    &g_pager->links[g_pager->selected_link_index].uri;
+                tui_go_to_uri(uri, true);
+            } break;
+
             // 'e' to edit current page link in a 'go' command
             case 'e':
             {
@@ -177,6 +196,40 @@ tui_update(void)
                 strncpy(g_tui->input, uri_string, g_tui->input_len + 1);
 
                 g_tui->cb_input_complete = tui_go_from_input;
+            } break;
+
+            // ',' navigate history backward
+            case ',':
+            {
+                g_hist->ptr->last_sel = g_pager->selected_link_index;
+                g_hist->ptr->last_scroll = g_pager->scroll;
+
+                const struct history_item *const item = history_pop();
+                if (item == NULL || !item->initialised)
+                {
+                    tui_cmd_status_prepare();
+                    tui_say("No older history");
+                    break;
+                }
+
+                tui_go_to_uri(&item->uri, false);
+            } break;
+
+            // ';' navigate history forward
+            case ';':
+            {
+                g_hist->ptr->last_sel = g_pager->selected_link_index;
+                g_hist->ptr->last_scroll = g_pager->scroll;
+
+                const struct history_item *const item = history_next();
+                if (item == NULL || !item->initialised)
+                {
+                    tui_cmd_status_prepare();
+                    tui_say("No re-do history");
+                    break;
+                }
+
+                tui_go_to_uri(&item->uri, false);
             } break;
 
             // Pressing a number goes into links mode
@@ -218,12 +271,14 @@ tui_update(void)
                 // first in the entire buffer.  We have to offset it by one (as
                 // the 'J' and 'K' handlers in the link mode will add/subtract
                 // one link respectively).  Bit hacky but it works
-                if (buf == 'J' || buf == 'n')
+                if ((buf == 'J' || buf == 'n') &&
+                    g_pager->selected_link_index < 0)
                 {
                     pager_select_first_link_visible();
                     --g_pager->selected_link_index;
                 }
-                else if (buf == 'K' || buf == 'p')
+                if ((buf == 'K' || buf == 'p') &&
+                    g_pager->selected_link_index < 0)
                 {
                     pager_select_last_link_visible();
                     ++g_pager->selected_link_index;
@@ -232,8 +287,9 @@ tui_update(void)
 
             // For now 'q' to exit
             case 'q':
-                exit(0);
-                break;
+                //exit(0);
+                //break;
+                return -1;
 
             default: break;
             }
@@ -354,7 +410,6 @@ tui_update(void)
                 pager_scroll(g_tui->h);
                 invalidate = true;
                 goto exit_block;
-            case 'b':
             case ('B' ^ 0100):
                 pager_scroll(-g_tui->h);
                 invalidate = true;
@@ -386,7 +441,7 @@ tui_update(void)
                     // Follow link
                     struct uri *uri =
                         &g_pager->links[g_pager->selected_link_index].uri;
-                    tui_go_to_uri(uri);
+                    tui_go_to_uri(uri, true);
                 }
                 else
                 {
@@ -419,11 +474,15 @@ tui_update(void)
             case 'x':
                 goto update_link_peek;
 
-            /* Escape key (or 'q'): cancel input */
+            /*
+             * Escape key (or 'q'): cancel input.  'Q' to cancel input and
+             * deselect selected link
+             */
+            case 'Q':
+                g_pager->selected_link_index = -1;
             case '\x1b':
             case 'q':
                 tui_clear_cmd();
-                g_pager->selected_link_index = -1;
                 next_mode = TUI_MODE_NORMAL;
                 goto exit_block;
 
@@ -677,18 +736,22 @@ tui_go_from_input(void)
             "gemini://%s", tmp);
         uri = uri_parse(g_tui->input, g_tui->input_len);
     }
-    tui_go_to_uri(&uri);
+    tui_go_to_uri(&uri, true);
 }
 
 /* Goto a site */
 void
-tui_go_to_uri(struct uri *uri)
+tui_go_to_uri(
+    const struct uri *const uri_in,
+    bool push_hist)
 {
+    static struct uri uri;
+    memcpy(&uri, uri_in, sizeof(struct uri));
     tui_cmd_status_prepare();
 
-    if (uri->protocol == PROTOCOL_UNKNOWN ||
-        uri->protocol == PROTOCOL_GOPHER ||
-        uri->protocol == PROTOCOL_FINGER)
+    if (uri.protocol == PROTOCOL_UNKNOWN ||
+        uri.protocol == PROTOCOL_GOPHER ||
+        uri.protocol == PROTOCOL_FINGER)
     {
         // Show error message
         tui_say("Unsupported protocol");
@@ -696,14 +759,14 @@ tui_go_to_uri(struct uri *uri)
     }
 
     // Assume Gemini if no scheme given
-    if (uri->protocol == PROTOCOL_NONE)
+    if (uri.protocol == PROTOCOL_NONE)
     {
-        uri->protocol = PROTOCOL_GEMINI;
+        uri.protocol = PROTOCOL_GEMINI;
     }
 
     // All protocols except file need a hostname
-    if (uri->protocol != PROTOCOL_FILE &&
-        uri->hostname[0] == '\0')
+    if (uri.protocol != PROTOCOL_FILE &&
+        uri.hostname[0] == '\0')
     {
         tui_say("Invalid URI");
         return;
@@ -713,11 +776,33 @@ tui_go_to_uri(struct uri *uri)
     tui_printf("Loading %s ...", g_tui->input);
 
     // Handle protocol/requests
-    switch (uri->protocol)
+    switch (uri.protocol)
     {
     case PROTOCOL_GEMINI:
     {
-        gemini_request(uri);
+        int success = gemini_request(&uri);
+
+        // Update the content in the pager!
+        if (success == 0)
+        {
+            memcpy(&g_state->uri, uri_in, sizeof(struct uri));
+            int sel, scroll;
+            if (push_hist)
+            {
+                history_push(&g_state->uri,
+                    g_pager->selected_link_index, g_pager->scroll);
+                sel = -1;
+                scroll = 0;
+            }
+            else
+            {
+                // Page is presumably from history, so read the
+                // last selection/scroll values
+                sel = g_hist->ptr->last_sel;
+                scroll = g_hist->ptr->last_scroll;
+            }
+            pager_update_page(sel, scroll);
+        }
     } break;
 
     case PROTOCOL_FILE:
@@ -725,7 +810,7 @@ tui_go_to_uri(struct uri *uri)
         // Local file; try to open it.
 
         static char file_path[FILENAME_MAX];
-        uri_str(uri, file_path, sizeof(file_path), URI_FLAGS_NO_PROTOCOL_BIT);
+        uri_str(&uri, file_path, sizeof(file_path), URI_FLAGS_NO_PROTOCOL_BIT);
         FILE *file = fopen(file_path, "r");
         if (!file)
         {
@@ -746,15 +831,31 @@ tui_go_to_uri(struct uri *uri)
 
         // Read file
         fseek(file, 0, SEEK_SET);
-        if (fread(g_recv->b, len, 1, file) > 0)
+        bool success = fread(g_recv->b, len, 1, file) > 0;
+        fclose(file);
+
+        if (success)
         {
             // Update pager content
             g_recv->size = len;
-            memcpy(&g_state->uri, uri, sizeof(struct uri));
-            pager_update_page();
+            memcpy(&g_state->uri, uri_in, sizeof(struct uri));
+            int sel, scroll;
+            if (push_hist)
+            {
+                history_push(&g_state->uri,
+                    g_pager->selected_link_index, g_pager->scroll);
+                sel = -1;
+                scroll = 0;
+            }
+            else
+            {
+                // Page is presumably from history, so read the
+                // last selection/scroll values
+                sel = g_hist->ptr->last_sel;
+                scroll = g_hist->ptr->last_scroll;
+            }
+            pager_update_page(sel, scroll);
         }
-
-        fclose(file);
     } break;
 
     default: break;

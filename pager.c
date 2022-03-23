@@ -23,11 +23,11 @@ pager_init(void)
 }
 
 void
-pager_update_page(void)
+pager_update_page(int selected, int scroll)
 {
     g_pager->link_count = 0;
-    g_pager->selected_link_index = -1;
-    g_pager->scroll = 0;
+    g_pager->selected_link_index = selected;
+    g_pager->scroll = scroll;
 
     // Copy page data into the typesetter
     typesetter_reinit(&g_pager->typeset);
@@ -175,6 +175,7 @@ pager_paint(void)
         tui_cursor_move(0, i + 1);
 
         // Draw the line
+        bool highlighted = false;
         if (i < g_pager->buffer.line_count - g_pager->scroll)
         {
             // Clamp line to end of visible buffer (this obviously doesn't wrap
@@ -183,12 +184,12 @@ pager_paint(void)
             //line->bytes = utf8_size_w_formats(line->s, line->len);
 
             // Line highlighting
-            bool highlighted = false;
             for (int l = 0; l < g_pager->link_count; ++l)
             {
-                if (g_pager->links[l].buffer_loc == line->s)
+                struct pager_link *link = &g_pager->links[l];
+                if (line->s >= link->buffer_loc &&
+                    line->s < link->buffer_loc + link->buffer_loc_len)
                 {
-                    // TODO: check that these escape codes are proper
                     if (l == g_pager->selected_link_index)
                     {
                         tui_say("\x1b[35m");

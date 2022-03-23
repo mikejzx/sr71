@@ -28,6 +28,7 @@ gemini_deinit(void)
 int
 gemini_request(struct uri *uri)
 {
+    int ret_status = -1;
     struct gemini *const gem = &g_state->gem;
 
     // Create socket
@@ -36,6 +37,7 @@ gemini_request(struct uri *uri)
         //fprintf(stderr, "gemini: failed to create socket\n");
         tui_cmd_status_prepare();
         tui_say("error: failed to create socket");
+        gem->sock = 0;
         return -1;
     }
 
@@ -50,7 +52,7 @@ gemini_request(struct uri *uri)
     {
         tui_cmd_status_prepare();
         tui_say("error: failed to set socket timeout");
-        return -1;
+        goto close_socket;
     }
 
     // Setup TLS
@@ -88,11 +90,9 @@ gemini_request(struct uri *uri)
     if (!server_addr)
     {
         //fprintf(stderr, "gemini: no address for '%s'\n", uri->hostname);
-        close(gem->sock);
-        gem->sock = 0;
         tui_cmd_status_prepare();
         tui_printf("error: no address for to '%s'", uri->hostname);
-        return -1;
+        goto close_socket;
     }
 
     tui_cmd_status_prepare();
@@ -103,13 +103,10 @@ gemini_request(struct uri *uri)
         server_addr->ai_addrlen) < 0)
     {
         //fprintf(stderr, "gemini: failed to connect to '%s'\n", uri->hostname);
-        close(gem->sock);
-        gem->sock = 0;
 
         tui_cmd_status_prepare();
         tui_printf("error: failed to connect to %s", uri->hostname);
-
-        return -1;
+        goto close_socket;
     }
 
     tui_cmd_status_prepare();
@@ -119,12 +116,11 @@ gemini_request(struct uri *uri)
     if (SSL_connect(gem->ssl) != 1)
     {
         //fprintf(stderr, "gemini: TLS handshake failed '%s'\n", uri->hostname);
-        close(gem->sock);
-        gem->sock = 0;
 
         tui_cmd_status_prepare();
         tui_printf("error: failed to perform TLS handshake with %s",
             uri->hostname);
+        goto close_socket;
     }
 
     tui_cmd_status_prepare();
@@ -202,19 +198,14 @@ gemini_request(struct uri *uri)
                 memcpy(g_recv->b + recv_bytes, chunk, response_code);
                 recv_bytes += response_code;
             }
-            g_recv->size = recv_bytes;
+            g_recv->size = 0;
             if (response_code < 0)
             {
                 tui_cmd_status_prepare();
                 tui_printf("Error reading server response body");
                 goto close_socket;
             }
-
-            // Update URI status
-            memcpy(&g_state->uri, uri, sizeof(struct uri));
-
-            // Update the content in the pager!
-            pager_update_page();
+            g_recv->size = recv_bytes;
 
             tui_cmd_status_prepare();
             if (recv_bytes < 1024)
@@ -233,6 +224,7 @@ gemini_request(struct uri *uri)
                     uri->hostname, recv_bytes / (1024.0f * 1024.0f));
             }
 
+            ret_status = 0;
             break;
 
         // Redirect code
@@ -249,13 +241,15 @@ gemini_request(struct uri *uri)
                 // TODO: warn about cross-protocol redirects
             }
 
+            // TODO: don't follow more than N (5) consecutive redirects
+
             // Resolve URI in case it is relative
             uri_abs(&g_state->uri, &redirect_uri);
 
             // Perform redirect
             tui_cmd_status_prepare();
             tui_printf("Redirecting to %s", redirect_uri_str);
-            tui_go_to_uri(&redirect_uri);
+            tui_go_to_uri(&redirect_uri, true);
 
             break;
 
@@ -269,5 +263,5 @@ close_socket:
     close(gem->sock);
     gem->sock = 0;
 
-    return 0;
+    return ret_status;
 }

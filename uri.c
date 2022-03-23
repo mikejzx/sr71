@@ -90,9 +90,9 @@ uri_str(
     // Get scheme string
     char scheme[PROTOCOL_NAME_MAX + strlen("://")];
     scheme[0] = '\0';
-    if ((flags & ~URI_FLAGS_NO_PROTOCOL_BIT) &&
-        (uri->protocol != PROTOCOL_NONE ||
-        uri->protocol != PROTOCOL_UNKNOWN))
+    if (!(uri->protocol == PROTOCOL_NONE ||
+        uri->protocol == PROTOCOL_UNKNOWN ||
+        flags & URI_FLAGS_NO_PROTOCOL_BIT))
     {
         strcpy(scheme, PROTOCOL_NAMES[uri->protocol]);
         strcat(scheme, "://");

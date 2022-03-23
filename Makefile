@@ -9,6 +9,10 @@ LDFLAGS=-lcrypto -lssl
 CC=gcc
 RM=rm -f
 
+# Pre-compiled headers
+PCH_SRC=pch.h
+PCH=$(PCH_SRC).gch
+
 .PHONY: all clean run debug
 
 all: $(OUT)
@@ -30,6 +34,7 @@ mem: all
 clean:
 	$(RM) $(OBJS)
 	$(RM) $(OUT)
+	$(RM) $(PCH)
 
 # Link objs to executable
 $(OUT): $(OBJS)
@@ -39,5 +44,10 @@ $(OUT): $(OBJS)
 -include $(DEPS)
 
 # Compile objects with dependencies
-%.o: %.c Makefile
+%.o: %.c $(PCH) Makefile
 	$(CC) -MMD -MP -c $< -o $@ $(CFLAGS) $(LDFLAGS)
+
+# Compile PCH
+$(PCH): $(PCH_SRC) Makefile
+	$(CC) -x c-header -o $(PCH) -c $(PCH_SRC) $(CFLAGS) $(LDFLAGS)
+
