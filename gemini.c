@@ -10,8 +10,20 @@ gemini_init(void)
     struct gemini *const gem = &g_state->gem;
 
     // Initialise TLS.  We require at least TLS 1.2
-    gem->ctx = SSL_CTX_new(TLS_client_method());
+    gem->ctx = SSL_CTX_new(TLS_method());
     SSL_CTX_set_min_proto_version(gem->ctx, TLS1_2_VERSION);
+    SSL_CTX_set_verify(gem->ctx, SSL_VERIFY_NONE, NULL);
+
+    // Cipher list from AV-98's list of "sensible ciphers"
+    SSL_CTX_set_cipher_list(gem->ctx,
+        "AESGCM+ECDHE:"
+        "AESGCM+DHE:"
+        "CHACHA20+ECDHE:"
+        "CHACHA20+DHE:"
+        "!DSS:"
+        "!SHA1:"
+        "!MD5:"
+        "@STRENGTH");
 }
 
 void
@@ -21,7 +33,6 @@ gemini_deinit(void)
 
     if (gem->sock) close(gem->sock);
 
-    SSL_free(gem->ssl);
     SSL_CTX_free(gem->ctx);
 }
 
@@ -31,33 +42,9 @@ gemini_request(struct uri *uri)
     int ret_status = -1;
     struct gemini *const gem = &g_state->gem;
 
-    // Create socket
-    if ((gem->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-    {
-        //fprintf(stderr, "gemini: failed to create socket\n");
-        tui_cmd_status_prepare();
-        tui_say("error: failed to create socket");
-        gem->sock = 0;
-        return -1;
-    }
-
-    // Setup timeout on socket
-    struct timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
-    if (setsockopt(gem->sock, SOL_SOCKET, SO_RCVTIMEO,
-        (char *)&timeout, sizeof(timeout)) < 0 ||
-        setsockopt(gem->sock, SOL_SOCKET, SO_SNDTIMEO,
-        (char *)&timeout, sizeof(timeout)) < 0)
-    {
-        tui_cmd_status_prepare();
-        tui_say("error: failed to set socket timeout");
-        goto close_socket;
-    }
-
-    // Setup TLS
-    gem->ssl = SSL_new(gem->ctx);
-    SSL_set_fd(gem->ssl, gem->sock);
+    if (!uri ||
+        !uri->hostname ||
+        uri->hostname[0] == '\0') return -1;
 
     tui_cmd_status_prepare();
     tui_say("Looking up address ...");
@@ -73,54 +60,123 @@ gemini_request(struct uri *uri)
         snprintf(port_str, sizeof(port_str), "%04d", uri->port);
     }
 
-    // Get host address
-    struct addrinfo *server_addr = NULL, *res;
-    getaddrinfo(uri->hostname, port_str, 0, &res);
+    // Get host addresses
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = IPPROTO_TCP;
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;
+    hints.ai_canonname = NULL;
+    hints.ai_addr = NULL;
+    hints.ai_next = NULL;
+    struct addrinfo *res = NULL;
+    getaddrinfo(uri->hostname, port_str, &hints, &res);
+
+    // Connect to any of the addresses we can
+    bool connected = false;
     for (struct addrinfo *i = res; i != NULL; i = i->ai_next)
     {
-        // TODO support for IPv6-only servers?
-        //static char addr_str[INET6_ADDRSTRLEN];
-        if (i->ai_addr->sa_family == AF_INET)
+        // Create socket
+        if ((gem->sock = socket(
+            i->ai_addr->sa_family,
+            SOCK_STREAM, 0)) < 0)
         {
-            //struct sockaddr_in *p = (struct sockaddr_in *)i->ai_addr;
-            server_addr = i;
-            break;
+            //fprintf(stderr, "gemini: failed to create socket\n");
+            tui_cmd_status_prepare();
+            tui_say("error: failed to create socket");
+            gem->sock = 0;
+            continue;
         }
+
+        // Setup timeout on socket
+        static const struct timeval timeout =
+        {
+            .tv_sec = 5,
+            .tv_usec = 0,
+        };
+        if (setsockopt(gem->sock, SOL_SOCKET, SO_RCVTIMEO,
+            (char *)&timeout, sizeof(timeout)) < 0 ||
+            setsockopt(gem->sock, SOL_SOCKET, SO_SNDTIMEO,
+            (char *)&timeout, sizeof(timeout)) < 0)
+        {
+            tui_cmd_status_prepare();
+            tui_say("error: failed to set socket timeout");
+            gem->sock = 0;
+            continue;
+        }
+
+        tui_cmd_status_prepare();
+        tui_say("Connecting ...");
+
+        // Connect socket
+        if (connect(gem->sock, (struct sockaddr *)i->ai_addr,
+            i->ai_addrlen) < 0)
+        {
+            //fprintf(stderr, "gemini: failed to connect to '%s'\n", uri->hostname);
+
+            tui_cmd_status_prepare();
+            tui_printf("error: failed to connect to %s", uri->hostname);
+            gem->sock = 0;
+            continue;
+        }
+        connected = true;
+
+        break;
     }
-    if (!server_addr)
+    freeaddrinfo(res);
+    if (!connected)
     {
         //fprintf(stderr, "gemini: no address for '%s'\n", uri->hostname);
         tui_cmd_status_prepare();
-        tui_printf("error: no address for to '%s'", uri->hostname);
-        goto close_socket;
+        if (res == NULL)
+        {
+            tui_printf("error: no addresses for '%s'", uri->hostname);
+        }
+        else
+        {
+            tui_printf("error: could not connect to '%s'", uri->hostname);
+        }
+        goto fail;
     }
 
-    tui_cmd_status_prepare();
-    tui_say("Connecting ...");
-
-    // Connect socket
-    if (connect(gem->sock, (struct sockaddr *)server_addr->ai_addr,
-        server_addr->ai_addrlen) < 0)
-    {
-        //fprintf(stderr, "gemini: failed to connect to '%s'\n", uri->hostname);
-
-        tui_cmd_status_prepare();
-        tui_printf("error: failed to connect to %s", uri->hostname);
-        goto close_socket;
-    }
+    // Setup TLS
+    gem->ssl = SSL_new(gem->ctx);
+    SSL_set_fd(gem->ssl, gem->sock);
+    SSL_set_connect_state(gem->ssl);
+    SSL_set_verify(gem->ssl, SSL_VERIFY_NONE, NULL);
+    SSL_ctrl(gem->ssl,
+        SSL_CTRL_SET_TLSEXT_HOSTNAME,
+        TLSEXT_NAMETYPE_host_name,
+        (void *)uri->hostname);
 
     tui_cmd_status_prepare();
     tui_say("TLS handshake ...");
 
     // TLS handshake
-    if (SSL_connect(gem->ssl) != 1)
+    int ssl_status;
+    if ((ssl_status = SSL_connect(gem->ssl)) != 1)
     {
         //fprintf(stderr, "gemini: TLS handshake failed '%s'\n", uri->hostname);
 
+    #if 0
+        unsigned long reason = ERR_get_error();
+        const char *reason_str = ERR_reason_error_string(reason);
+    #endif
+
         tui_cmd_status_prepare();
-        tui_printf("error: failed to perform TLS handshake with %s",
-            uri->hostname);
-        goto close_socket;
+        if (ssl_status == 0)
+        {
+            tui_printf("error: TLS connection closed");
+                //"(%lu: %s)", reason, reason_str);
+        }
+        else
+        {
+            tui_printf("error: failed to perform TLS handshake with %s",
+                uri->hostname);
+                //"(%lu: %s)", reason, reason_str);
+        }
+        goto fail;
     }
 
     tui_cmd_status_prepare();
@@ -132,7 +188,8 @@ gemini_request(struct uri *uri)
     {
         // Somehow no certificate was presented
         tui_cmd_status_prepare();
-        tui_say("warning: server did not present a certificate");
+        tui_say("error: server did not present a certificate");
+        goto fail;
     }
     else
     {
@@ -173,7 +230,7 @@ gemini_request(struct uri *uri)
         tui_cmd_status_prepare();
         tui_printf("Error while reading response header data (error %d)",
             ssl_error);
-        goto close_socket;
+        goto fail;
     }
 
     int response_header_len = strcspn(response_header, "\r");
@@ -189,6 +246,19 @@ gemini_request(struct uri *uri)
             char chunk[512];
             size_t recv_bytes = 0;
 
+            // Read whatever was left from the header chunk after the header
+            // (or else we end up with missing content...)
+            response_header_len += 2; // mind the CR-LF
+            if (read_code > response_header_len)
+            {
+                recv_buffer_check_size(
+                    recv_bytes + read_code - response_header_len);
+                memcpy(g_recv->b + recv_bytes,
+                    response_header + response_header_len,
+                    read_code - response_header_len);
+                recv_bytes += read_code - response_header_len;
+            }
+
             // Read response body in chunks
             int response_code;
             while ((response_code =
@@ -203,10 +273,11 @@ gemini_request(struct uri *uri)
             {
                 tui_cmd_status_prepare();
                 tui_printf("Error reading server response body");
-                goto close_socket;
+                goto fail;
             }
             g_recv->size = recv_bytes;
 
+            // TODO: move this stuff away from this file
             tui_cmd_status_prepare();
             if (recv_bytes < 1024)
             {
@@ -255,11 +326,15 @@ gemini_request(struct uri *uri)
 
         // If status does not belong to 'SUCCESS' range of codes then socket
         // should be closed immediately
-        default: goto close_socket;
+        default: goto fail;
     }
 
-close_socket:
-    // Close socket
+fail:
+    if (gem->ssl)
+    {
+        SSL_free(gem->ssl);
+        gem->ssl = NULL;
+    }
     close(gem->sock);
     gem->sock = 0;
 

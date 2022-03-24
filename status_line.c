@@ -39,7 +39,6 @@ status_line_paint(void)
             // Just display page URI for now
             c->bytes = uri_str(&g_state->uri,
                 text, sizeof(text), URI_FLAGS_NONE);
-            c->bytes = strnlen(text, sizeof(text));
             c->len = min(utf8_strnlen_w_formats(text, c->bytes),
                 max(g_tui->w - 4, 0));
             c->bytes = utf8_size_w_formats(text, c->len);

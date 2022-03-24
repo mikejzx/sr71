@@ -66,7 +66,7 @@ void tui_init(void);
 void tui_cleanup(void);
 int tui_update(void);
 void tui_resized(void);
-void tui_repaint(void);
+void tui_repaint(bool);
 void tui_cmd_status_prepare(void);
 void tui_go_to_uri(const struct uri *const, bool);
 

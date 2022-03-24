@@ -72,5 +72,6 @@ struct uri
 struct uri uri_parse(const char *, size_t);
 size_t uri_str(struct uri *, char *, size_t, enum uri_string_flags);
 void uri_abs(struct uri *, struct uri *);
+void uri_normalise(struct uri *);
 
 #endif

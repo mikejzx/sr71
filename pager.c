@@ -37,8 +37,8 @@ pager_update_page(int selected, int scroll)
         &g_pager->buffer,
         min(g_pager->visible_buffer.w, 70));
 
-    // Just refresh the whole TUI
-    tui_repaint();
+    // Refresh the TUI
+    tui_repaint(true);
 }
 
 void

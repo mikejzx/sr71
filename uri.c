@@ -148,3 +148,10 @@ uri_abs(struct uri *base, struct uri *rel)
         base->path,
         old_path);
 }
+
+// Normalise/resolve a URI (i.e. get rid of '..', double slashes, etc.)
+void
+uri_normalise(struct uri *uri)
+{
+
+}

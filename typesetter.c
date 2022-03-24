@@ -36,6 +36,13 @@ typesetter_reinit(struct typesetter *t)
         t->raw_lines = malloc(lines_size);
     }
 
+    FILE *f = fopen("test.txt", "w");
+    for (int i = 0; i < t->raw_line_count; ++i)
+    {
+        fprintf(f, "line: '%.*s'\n", (int)g_recv->size, g_recv->b);
+    }
+    fclose(f);
+
     // Set line points in raw buffer
     int l = 0, l_prev = -1;
     for (int i = 0; i < g_recv->size; ++i)
@@ -43,7 +50,7 @@ typesetter_reinit(struct typesetter *t)
         if (g_recv->b[i] != '\n' && i != g_recv->size - 1) continue;
 
         t->raw_lines[l].s = &g_recv->b[l_prev + 1];
-        t->raw_lines[l].bytes = i - l_prev - 1;
+        t->raw_lines[l].bytes = i - l_prev - (int)(g_recv->b[i] == '\n');
         t->raw_lines[l].len = utf8_strnlen_w_formats(
             &g_recv->b[l_prev + 1],
             t->raw_lines[l].bytes);
@@ -81,17 +88,17 @@ typeset_gemtext(
     if (width_total < 10) return;
 
     // Allocate space for buffer if needed
-    if (!b->b)
+    if (!b->b || b->size < g_recv->size)
     {
-        b->b = malloc(g_recv->size);
-    }
-    else if (b->size < g_recv->size)
-    {
-        b->size = g_recv->size;
+        b->size = (g_recv->size * 3) / 2;
         if (b->b) free(b->b);
         b->b = malloc(b->size);
     }
-    if (!b->b) return;
+    if (!b->b)
+    {
+        fprintf(stderr, "out of memory\n");
+        exit(-1);
+    }
 
     // Allocate space for lines.  The number we compute assumes that EVERY line
     // will be wrapped to the width (even though they aren't) and *should*
@@ -154,6 +161,22 @@ typeset_gemtext(
     // The following macros operate on the current line (by appending to them).
     // They are here in hopes to massively reduce duplication of some hideous
     // code and hence hopefully make the rendering code a bit cleaner
+#define BUFFER_CHECK_SIZE(x) \
+    if (buffer_pos + (x) >= buffer_end_pos) \
+    { \
+        /*
+         * We just abort rendering if we exceed the maximum buffer size, as
+         * it's pretty tricky to perform the reallocation (as we use pointers
+         * to parts of the buffer so much).  TODO investigate better solution
+         * The overflow would only occur (in rare cases with absolutely
+         * enormous files) if huge indent amounts or link/list prefixes, etc.
+         * add up.
+         */ \
+        tui_cmd_status_prepare(); \
+        tui_printf("Aborting render (exceeded buffer size %.1f KiB).  FIXME", \
+            b->size / 1024.0f); \
+        return; \
+    }
 #define LINE_START() \
     do \
     { \
@@ -174,22 +197,25 @@ typeset_gemtext(
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >= \
             b->lines_capacity) \
         { \
-            /* just abort if line count gets stupid (due to tiny widths */ \
+            /* just abort if line count gets stupid (due to tiny widths) */ \
             return; \
         } \
         ++b->line_count; \
         ++line; \
     } while(0)
 #define LINE_INDENT(do_hang) \
-    LINE_PRINTF("%*s", \
-        gemtext.indent + \
-            ((do_hang) ? gemtext.hang : 0), \
-        "");
+    do \
+    { \
+        int indent_amount = gemtext.indent + \
+            ((do_hang) ? gemtext.hang : 0); \
+        BUFFER_CHECK_SIZE(indent_amount); \
+        LINE_PRINTF("%*s", indent_amount, ""); \
+    } while(0)
 #define LINE_STRNCPY(str, len) \
     do \
     { \
         const size_t n_bytes = (len); \
-        if (buffer_pos + n_bytes >= buffer_end_pos) break; \
+        BUFFER_CHECK_SIZE(n_bytes); \
         strncpy(buffer_pos, \
             (str), \
             min(n_bytes, buffer_end_pos - buffer_pos)); \
@@ -204,6 +230,7 @@ typeset_gemtext(
             buffer_end_pos - buffer_pos, \
             (fmt), \
             __VA_ARGS__); \
+    BUFFER_CHECK_SIZE(LINE_PRINTF_N_BYTES); \
     line->bytes += LINE_PRINTF_N_BYTES; \
     buffer_pos += LINE_PRINTF_N_BYTES; \
     gemtext.raw_dist += LINE_PRINTF_N_BYTES;
@@ -277,9 +304,36 @@ typeset_gemtext(
 
         default: break;
         }
+        if (heading_level)
+        {
+            // For headings; we hang wrapped text by the first whitespace.
+            // This makes e.g. documents with numbered sections look really
+            // nice
+            for (const char *i = rawline->s + heading_level + 1;
+                i < rawline->s + rawline->bytes && *i;
+                ++i)
+            {
+                if (*i == '\n' ||
+                    *i == '\0')
+                {
+                    gemtext.hang = 0;
+                    break;
+                }
+                if (*i == ' ' ||
+                    *i == '\t')
+                {
+                    // TODO: check if UTF-8 strings work with this
+                    // TODO make sure this works when sections have multiple
+                    //      spaces
+                    gemtext.hang = rawline->s + heading_level - i;
+                    break;
+                }
+            }
+        }
 
         // Parse links
-        if (rawline->bytes > strlen("=>") &&
+        if (!heading_level &&
+            rawline->bytes > strlen("=>") &&
             strncmp(rawline->s, "=>", strlen("=>")) == 0)
         {
             pager_check_link_capacity();
@@ -296,7 +350,18 @@ typeset_gemtext(
             // Begins at first non-whitespace character after URI
             const char *l_title;
             size_t l_title_len;
-            if (strcspn(l_uri, "\t ") < rawline->bytes)
+            bool has_title = false;
+            for (const char *i = l_uri;
+                i < rawline->s + rawline->bytes && *i;
+                ++i)
+            {
+                if (*i == ' ' || *i == '\t')
+                {
+                    has_title = true;
+                    break;
+                }
+            }
+            if (has_title)
             {
                 l_title = l_uri + l_uri_len;
                 l_title += strspn(l_title, "\t ");
@@ -304,6 +369,7 @@ typeset_gemtext(
             }
             else
             {
+                // Use URI as title
                 l_title = l_uri;
                 l_title_len = l_uri_len;
             }
@@ -331,7 +397,8 @@ typeset_gemtext(
         }
 
         // Parse lists
-        if (rawline->bytes > strlen("* ") &&
+        if (!heading_level &&
+            rawline->bytes > strlen("* ") &&
             strncmp(rawline->s, "* ", strlen("* ")) == 0)
         {
             gemtext.indent = 1;

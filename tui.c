@@ -180,7 +180,18 @@ tui_update(void)
             // 'e' to edit current page link in a 'go' command
             case 'e':
             {
-                struct uri *uri = &g_state->uri;
+                struct uri *uri;
+                if (g_pager->selected_link_index < 0 ||
+                    g_pager->selected_link_index >= g_pager->link_count)
+                {
+                    // Use current page link
+                    uri = &g_state->uri;
+                }
+                else
+                {
+                    // Use selected link
+                    uri = &g_pager->links[g_pager->selected_link_index].uri;
+                }
                 char uri_string[256];
                 size_t uri_strlen =
                     uri_str(uri, uri_string, sizeof(uri_string), 0);
@@ -317,7 +328,8 @@ tui_update(void)
                 /* Return key; end of input */
 
                 // Execute callback
-                if (g_tui->cb_input_complete)
+                if (g_tui->input_len &&
+                    g_tui->cb_input_complete)
                 {
                     g_tui->cb_input_complete();
                 }
@@ -705,15 +717,17 @@ tui_resized(void)
     pager_resized();
 
     // Repaint screen
-    tui_repaint();
+    tui_repaint(true);
 }
 
 /* Repaint entire screen */
 void
-tui_repaint(void)
+tui_repaint(bool clear)
 {
     tui_cursor_move(0, 0);
-    tui_say("\x1b[2J");
+
+    if (clear) tui_say("\x1b[2J");
+
     pager_paint();
     status_line_paint();
 }
@@ -809,36 +823,119 @@ tui_go_to_uri(
     {
         // Local file; try to open it.
 
-        static char file_path[FILENAME_MAX];
-        uri_str(&uri, file_path, sizeof(file_path), URI_FLAGS_NO_PROTOCOL_BIT);
-        FILE *file = fopen(file_path, "r");
-        if (!file)
+        static char path[FILENAME_MAX];
+        uri_str(&uri, path, sizeof(path), URI_FLAGS_NO_PROTOCOL_BIT);
+
+        // Check what type of file the URI is
+        struct stat path_stat;
+        if (stat(path, &path_stat) < 0)
         {
             tui_cmd_status_prepare();
             tui_say("No such file or directory");
             break;
         }
 
-        // TODO directory listings
+        bool is_dir = path_stat.st_mode & S_IFDIR;
 
-        tui_cmd_status_prepare();
-        tui_printf("Loading local file %s", file_path);
-
-        // Read size of file and resize buffer if needed
-        fseek(file, 0, SEEK_END);
-        size_t len = ftell(file);
-        recv_buffer_check_size(len);
-
-        // Read file
-        fseek(file, 0, SEEK_SET);
-        bool success = fread(g_recv->b, len, 1, file) > 0;
-        fclose(file);
-
-        if (success)
+        if (!is_dir)
         {
-            // Update pager content
-            g_recv->size = len;
+            // Regular file
+            FILE *file = fopen(path, "r");
+            if (!file)
+            {
+                tui_cmd_status_prepare();
+                tui_say("Failed to open file");
+                break;
+            }
+
+            tui_cmd_status_prepare();
+            tui_printf("Loading local file %s", path);
+
+            // Read size of file and resize buffer if needed
+            fseek(file, 0, SEEK_END);
+            size_t len = ftell(file);
+            recv_buffer_check_size(len);
+
+            // Read file
+            fseek(file, 0, SEEK_SET);
+            bool success = fread(g_recv->b, len, 1, file) > 0;
+            fclose(file);
+
+            if (success)
+            {
+                // Update pager content
+                g_recv->size = len;
+                memcpy(&g_state->uri, uri_in, sizeof(struct uri));
+                int sel, scroll;
+                if (push_hist)
+                {
+                    history_push(&g_state->uri,
+                        g_pager->selected_link_index, g_pager->scroll);
+                    sel = -1;
+                    scroll = 0;
+                }
+                else
+                {
+                    // Page is presumably from history, so read the
+                    // last selection/scroll values
+                    sel = g_hist->ptr->last_sel;
+                    scroll = g_hist->ptr->last_scroll;
+                }
+                pager_update_page(sel, scroll);
+
+                tui_cmd_status_prepare();
+                tui_printf("Loaded local file, %d b", 0);
+            }
+        }
+        else
+        {
+            // Read directory and create listing
+            DIR *dir = opendir(path);
+            if (!dir)
+            {
+                tui_cmd_status_prepare();
+                tui_say("failed to open directory");
+                break;
+            }
+            size_t max_len = FILENAME_MAX + 128;
+            char *buf_tmp = malloc(max_len);
+            size_t bytes;
+
+            bytes = snprintf(buf_tmp, max_len,
+                "# %s\n"
+                "\n"
+                "=> ..\n",
+                path);
+            recv_buffer_check_size(bytes);
+            strncpy(g_recv->b, buf_tmp, bytes);
+            g_recv->size = bytes;
+
+            // Iterate over the directory and generate a gemtext file of the
+            // directory listing
+            int n_ent = 0;
+            for (struct dirent *entry = readdir(dir);
+                entry;
+                entry = readdir(dir))
+            {
+                if (strcmp(entry->d_name, ".") == 0 ||
+                    strcmp(entry->d_name, "..") == 0) continue;
+
+                bytes = snprintf(buf_tmp, max_len,
+                    "=> %s\n",
+                    entry->d_name);
+
+                recv_buffer_check_size(g_recv->size + bytes);
+                strncpy(g_recv->b + g_recv->size, buf_tmp, bytes);
+                g_recv->size += bytes;
+
+                ++n_ent;
+            }
+
+            (void)closedir(dir);
+            free(buf_tmp);
+
             memcpy(&g_state->uri, uri_in, sizeof(struct uri));
+
             int sel, scroll;
             if (push_hist)
             {
@@ -855,6 +952,9 @@ tui_go_to_uri(
                 scroll = g_hist->ptr->last_scroll;
             }
             pager_update_page(sel, scroll);
+
+            tui_cmd_status_prepare();
+            tui_printf("Loaded directory, %d entries", n_ent);
         }
     } break;
 

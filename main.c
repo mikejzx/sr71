@@ -31,7 +31,7 @@ main(void)
     gemini_init();
 
     // Set some temporary content
-#if 1
+#if 0
     static const char *PAGER_CONTENT =
         "This is a test\n"
         "Line 2\n"
@@ -125,15 +125,19 @@ main(void)
         "\n"
         "### Some links\n"
         "=> gemini://gemini.circumlunar.space/ Gemini Homepage\n"
-        "=> gemini://gemini.circumlunar.space/docs Gemini Documentation\n"
+        "=> gemini://gemini.circumlunar.space/docs/ Gemini Documentation\n"
         "=> gemini://example.com/\n"
         "=> file:///home/mike/pages/gemtext/gemini.circumlunar.space/home.gmi Local file test\n"
+        "=> file:///home/mike/ Local directory test\n"
         "=> gemini://example.com/ A link with a very long name that will wrap around and hopefully work properly\n"
         "=> gemini://example.com/\n"
+        "=> gemini://midnight.pub/\n"
         "\n"
+        "# Very long heading that should wrap very nicely blah blah blah blah blah\n"
         "This is a test paragraph\n";
 #endif
     g_recv->size = strlen(PAGER_CONTENT) + 1;
+    recv_buffer_check_size(g_recv->size);
     memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
 
     // Typeset the content
