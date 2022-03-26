@@ -12,6 +12,7 @@ RM=rm -f
 # Pre-compiled headers
 PCH_SRC=pch.h
 PCH=$(PCH_SRC).gch
+PCH_DEPS=$(PCH_SRC).d
 
 .PHONY: all clean run debug
 
@@ -42,6 +43,7 @@ $(OUT): $(OBJS)
 
 # Include generated dependencies
 -include $(DEPS)
+-include $(PCH_DEPS)
 
 # Compile objects with dependencies
 %.o: %.c $(PCH) Makefile
@@ -49,5 +51,5 @@ $(OUT): $(OBJS)
 
 # Compile PCH
 $(PCH): $(PCH_SRC) Makefile
-	$(CC) -x c-header -o $(PCH) -c $(PCH_SRC) $(CFLAGS) $(LDFLAGS)
+	$(CC) -MMD -MP -x c-header -o $(PCH) -c $(PCH_SRC) $(CFLAGS) $(LDFLAGS)
 

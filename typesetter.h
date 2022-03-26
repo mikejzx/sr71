@@ -2,6 +2,7 @@
 #define TYPESETTER_H
 
 struct pager_buffer;
+struct mime;
 
 /*
  * typesetter.h
@@ -20,7 +21,7 @@ struct typesetter
 void typesetter_init(struct typesetter *);
 void typesetter_deinit(struct typesetter *);
 void typesetter_reinit(struct typesetter *);
-void typeset_gemtext(struct typesetter *, struct pager_buffer *, size_t);
-//void typeset_gophermap(const char *, struct pager_buffer *);
+bool typeset_page(struct typesetter *,
+    struct pager_buffer *, size_t, struct mime *);
 
 #endif

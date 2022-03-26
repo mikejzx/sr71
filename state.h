@@ -6,6 +6,7 @@
 #include "gemini.h"
 //#include "gopher.h"
 #include "history.h"
+#include "mime.h"
 
 struct state
 {
@@ -28,6 +29,9 @@ struct state
 
         // Maximum size of content until realloc needed
         size_t capacity;
+
+        // Buffer MIME type
+        struct mime mime;
     } recv_buffer;
 
     // Client states

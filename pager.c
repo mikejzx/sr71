@@ -33,12 +33,21 @@ pager_update_page(int selected, int scroll)
     typesetter_reinit(&g_pager->typeset);
 
     // Typeset the content
-    typeset_gemtext(&g_pager->typeset,
+    bool typeset = typeset_page(&g_pager->typeset,
         &g_pager->buffer,
-        min(g_pager->visible_buffer.w, 70));
+        min(g_pager->visible_buffer.w, 70),
+        &g_recv->mime);
 
     // Refresh the TUI
-    tui_repaint(true);
+    tui_repaint(false);
+
+    if (!typeset)
+    {
+        tui_cmd_status_prepare();
+        tui_printf("no mailcap entry for '%s'", g_recv->mime.str);
+
+        // TODO open file with mailcap entry?
+    }
 }
 
 void
@@ -79,9 +88,10 @@ pager_resized(void)
     }
 
     // Re-typeset the content, to update word-wrapping, etc.
-    typeset_gemtext(&g_pager->typeset,
+    typeset_page(&g_pager->typeset,
         &g_pager->buffer,
-        min(g_pager->visible_buffer.w, 70));
+        min(g_pager->visible_buffer.w, 70),
+        &g_recv->mime);
 
     // Now we need to restore the scroll position by finding the line that has
     // the raw index we had

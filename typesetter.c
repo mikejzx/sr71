@@ -1,9 +1,10 @@
 #include "pch.h"
-#include "state.h"
 #include "gemini.h"
-#include "typesetter.h"
+#include "mime.h"
 #include "pager.h"
+#include "state.h"
 #include "tui.h"
+#include "typesetter.h"
 
 void
 typesetter_init(struct typesetter *t)
@@ -36,13 +37,6 @@ typesetter_reinit(struct typesetter *t)
         t->raw_lines = malloc(lines_size);
     }
 
-    FILE *f = fopen("test.txt", "w");
-    for (int i = 0; i < t->raw_line_count; ++i)
-    {
-        fprintf(f, "line: '%.*s'\n", (int)g_recv->size, g_recv->b);
-    }
-    fclose(f);
-
     // Set line points in raw buffer
     int l = 0, l_prev = -1;
     for (int i = 0; i < g_recv->size; ++i)
@@ -66,26 +60,22 @@ typesetter_deinit(struct typesetter *t)
     if (t->raw_lines) free(t->raw_lines);
 }
 
-/* Typeset gemtext to a pager buffer */
-void
-typeset_gemtext(
+/* Prepare buffers, etc. for typesetting */
+static bool
+typeset_start(
     struct typesetter *t,
     struct pager_buffer *b,
     size_t width_total)
 {
-    struct margin
-    {
-        int l, r;
-    } margin;
-    margin.l = 4;
-    margin.r = 8;
+    // Reset buffer state before we re-write it
+    b->line_count = 0;
 
-    width_total -= margin.l;
-    width_total -= margin.r;
+    // TODO: don't re-parse links on every update?
+    g_pager->link_count = 0;
 
     // Avoid errors and memory issues by just not rendering at all if the width
     // is stupidly small
-    if (width_total < 10) return;
+    if (width_total < 10) return false;
 
     // Allocate space for buffer if needed
     if (!b->b || b->size < g_recv->size)
@@ -111,7 +101,7 @@ typeset_gemtext(
     }
     const size_t wanted_lines_size =
         wanted_line_count * sizeof(struct pager_buffer_line);
-    if (!wanted_lines_size) return;
+    if (!wanted_lines_size) return false;
     if (!b->lines)
     {
         b->lines = malloc(wanted_lines_size);
@@ -123,22 +113,58 @@ typeset_gemtext(
         b->lines = malloc(wanted_lines_size);
         b->lines_capacity = wanted_lines_size;
     }
-    if (!b->lines) return;
+    if (!b->lines) return false;
 
-    // Reset buffer state before we re-write it
-    b->line_count = 0;
+    return true;
+}
 
-    // TODO: don't re-parse links on every update?
-    g_pager->link_count = 0;
+/* Stuff run after typesetting document */
+static void
+typeset_finish(
+    struct pager_buffer *b,
+    size_t n_bytes)
+{
+    // Replace all tabs with spaces, as we can't render them properly right now
+    // (without really breaking the rendering code)
+    for (char *c = b->b; c < b->b + n_bytes; ++c)
+    {
+        if (*c == '\t') *c = ' ';
+    }
+}
 
+/* Typeset gemtext to a pager buffer */
+static size_t
+typeset_gemtext(
+    struct typesetter *t,
+    struct pager_buffer *b,
+    size_t width_total)
+{
     // Position in buffer that we're up to
     char *buffer_pos = b->b;
 
     // Current gemtext parsing state
     struct gemtext_state
     {
-        bool is_verbatim;
-        bool is_list;
+        enum gemtext_parse_mode
+        {
+            // Only a few here; the rest of the modes can be handled without a
+            // flag
+            PARSE_PARAGRAPH = 0,
+            PARSE_VERBATIM,
+            PARSE_LIST,
+        } mode;
+
+        // Reference to the link being parsed (if any)
+        struct pager_link *link;
+
+        union
+        {
+            bool link_group_iterated;
+            int link_group_maxidx;
+        };
+        int link_group_maxidx_strlen;
+
+        // Current indent level
         int indent;
 
         // This is extra indent, but doesn't apply to first line in wrapped
@@ -152,6 +178,13 @@ typeset_gemtext(
         // Number of bytes to skip over in the raw string (e.g. to skip over
         // asterisks in list)
         size_t raw_bytes_skip;
+
+        // Pointer in string to the most recent escape code used.  This is used
+        // to preserve escapes across wrapped lines when the escape is actually
+        // out of the visible buffer.  Happens e.g in a wrapped heading when
+        // the initial line is out of view
+        const char *esc;
+        size_t esc_len;
 
         // Escape formatting code needs to be cleared before the next line
         bool need_clear_esc;
@@ -175,7 +208,7 @@ typeset_gemtext(
         tui_cmd_status_prepare(); \
         tui_printf("Aborting render (exceeded buffer size %.1f KiB).  FIXME", \
             b->size / 1024.0f); \
-        return; \
+        return 0; \
     }
 #define LINE_START() \
     do \
@@ -198,7 +231,7 @@ typeset_gemtext(
             b->lines_capacity) \
         { \
             /* just abort if line count gets stupid (due to tiny widths) */ \
-            return; \
+            return 0; \
         } \
         ++b->line_count; \
         ++line; \
@@ -222,6 +255,7 @@ typeset_gemtext(
         line->bytes += n_bytes; \
         buffer_pos += n_bytes; \
         gemtext.raw_dist += n_bytes; \
+        if (gemtext.link) gemtext.link->buffer_loc_len += n_bytes; \
     } while(0)
 #define LINE_STRNCPY_LIT(str) LINE_STRNCPY((str), strlen((str)))
 #define LINE_PRINTF(fmt, ...) \
@@ -233,7 +267,8 @@ typeset_gemtext(
     BUFFER_CHECK_SIZE(LINE_PRINTF_N_BYTES); \
     line->bytes += LINE_PRINTF_N_BYTES; \
     buffer_pos += LINE_PRINTF_N_BYTES; \
-    gemtext.raw_dist += LINE_PRINTF_N_BYTES;
+    gemtext.raw_dist += LINE_PRINTF_N_BYTES; \
+    if (gemtext.link) gemtext.link->buffer_loc_len += LINE_PRINTF_N_BYTES;
 
     // Iterate over each of the raw lines in the buffer
     struct pager_buffer_line *line = b->lines;
@@ -247,11 +282,18 @@ typeset_gemtext(
         const struct pager_buffer_line *const
             rawline = &t->raw_lines[raw_index];
 
-        // Reset raw distance for sub-lines on this line.
+        if (gemtext.link)
+        {
+            gemtext.link_group_iterated = false;
+            gemtext.link_group_maxidx = gemtext.link_group_maxidx_strlen = 0;
+            gemtext.link = NULL;
+        }
         gemtext.raw_dist = 0;
-
-        // Reset hang
         gemtext.hang = 0;
+        gemtext.mode = PARSE_PARAGRAPH;
+        gemtext.indent = 0;
+        gemtext.esc = NULL;
+        gemtext.esc_len = 0;
 
         // Start a new line
         LINE_START();
@@ -262,18 +304,17 @@ typeset_gemtext(
         {
             // Empty line
             LINE_FINISH();
-            gemtext.is_verbatim ^= true;
+            gemtext.mode ^= PARSE_VERBATIM;
             continue;
         }
 
-        if (gemtext.is_verbatim)
+        if (gemtext.mode == PARSE_VERBATIM)
         {
             // Print text verbatim
             gemtext.indent = 1;
             LINE_INDENT(false);
             LINE_STRNCPY(rawline->s, rawline->bytes);
             LINE_FINISH();
-            gemtext.indent = 0;
             continue;
         }
 
@@ -285,19 +326,28 @@ typeset_gemtext(
         switch(heading_level)
         {
         case 1:
-            LINE_STRNCPY_LIT("\x1b[1;36m");
+            gemtext.esc = buffer_pos;
+            const char *HEADING1_ESC = "\x1b[1;36m";
+            LINE_STRNCPY_LIT(HEADING1_ESC);
+            gemtext.esc_len = strlen(HEADING1_ESC);
             gemtext.raw_bytes_skip = 2;
             gemtext.need_clear_esc = true;
             break;
 
         case 2:
-            LINE_STRNCPY_LIT("\x1b[36m");
+            gemtext.esc = buffer_pos;
+            const char *HEADING2_ESC = "\x1b[36m";
+            LINE_STRNCPY_LIT(HEADING2_ESC);
+            gemtext.esc_len = strlen(HEADING1_ESC);
             gemtext.raw_bytes_skip = 3;
             gemtext.need_clear_esc = true;
             break;
 
         case 3:
-            LINE_STRNCPY_LIT("\x1b[1m");
+            gemtext.esc = buffer_pos;
+            const char *HEADING3_ESC = "\x1b[1m";
+            LINE_STRNCPY_LIT(HEADING3_ESC);
+            gemtext.esc_len = strlen(HEADING1_ESC);
             gemtext.raw_bytes_skip = 4;
             gemtext.need_clear_esc = true;
             break;
@@ -332,10 +382,30 @@ typeset_gemtext(
         }
 
         // Parse links
-        if (!heading_level &&
-            rawline->bytes > strlen("=>") &&
+        if (rawline->bytes > strlen("=>") &&
             strncmp(rawline->s, "=>", strlen("=>")) == 0)
         {
+            if (!gemtext.link_group_iterated)
+            {
+                // Count the number of links in this "link group" (i.e.
+                // consecutive links on the page)
+                gemtext.link_group_maxidx = g_pager->link_count;
+                for (int x = raw_index + 1; x < t->raw_line_count; ++x)
+                {
+                    const struct pager_buffer_line *const
+                        l = &t->raw_lines[x];
+                    if (!(l->bytes > strlen("=>") &&
+                        strncmp(l->s, "=>", strlen("=>")) == 0))
+                    {
+                        break;
+                    }
+                    ++gemtext.link_group_maxidx;
+                }
+                gemtext.link_group_maxidx_strlen = snprintf(
+                    NULL, 0,
+                    "%d", gemtext.link_group_maxidx);
+            }
+
             pager_check_link_capacity();
             size_t l_index = g_pager->link_count++;
 
@@ -349,7 +419,6 @@ typeset_gemtext(
             /* Get optional human-friendly label. */
             // Begins at first non-whitespace character after URI
             const char *l_title;
-            size_t l_title_len;
             bool has_title = false;
             for (const char *i = l_uri;
                 i < rawline->s + rawline->bytes && *i;
@@ -365,55 +434,78 @@ typeset_gemtext(
             {
                 l_title = l_uri + l_uri_len;
                 l_title += strspn(l_title, "\t ");
-                l_title_len = rawline->s + rawline->bytes - l_title;
             }
             else
             {
                 // Use URI as title
                 l_title = l_uri;
-                l_title_len = l_uri_len;
             }
 
             // Add link to page state and set buffer location so we can
             // highlight on selection
-            struct pager_link *l = &g_pager->links[l_index];
-            l->uri = uri_parse(l_uri, l_uri_len);
-            uri_abs(&g_state->uri, &l->uri);
-            l->buffer_loc = buffer_pos;
-            l->line_index = b->line_count;
-            l->buffer_loc_len = l_title_len;
+            gemtext.link = &g_pager->links[l_index];
+            gemtext.link->uri = uri_parse(l_uri, l_uri_len);
+            uri_abs(&g_state->uri, &gemtext.link->uri);
+            gemtext.link->buffer_loc = buffer_pos;
+            gemtext.link->line_index = b->line_count;
+            gemtext.link->buffer_loc_len = 0;
 
             // This is so that text wrapping will work for the link title.  We
             // want to print from where the title string starts if it exists
             // (if it doesn't we print from where the URI string is).
             gemtext.raw_bytes_skip = l_title - rawline->s;
 
+            /*
+             * This is a really subtle typographical feature; we align the link
+             * prefix (via extra indent) with the rest of the links, when the
+             * number of digits in the maximum link index is different
+             *   e.g.:
+             *      [8] This is a link that has an extra indent
+             *      [9] This link has an extra indent too
+             *     [10] Next llnk
+             *     [11] Another llnk
+             * Doesn't account for protocol name though.  Not sure if that
+             * would be a good idea or not
+             */
+            gemtext.hang = 0;
+            char l_index_str[16];
+            int l_index_strlen = snprintf(l_index_str, sizeof(l_index_str),
+                "%d", (int)l_index);
+            gemtext.hang =
+                max(gemtext.link_group_maxidx_strlen - l_index_strlen, 0);
+            LINE_PRINTF("%*s", gemtext.hang, "");
+
             // Print link prefix
-            LINE_PRINTF(" [%d] ", (int)l_index);
+            //LINE_PRINTF(" [%d] ", (int)l_index);
+            if (gemtext.link->uri.protocol != g_state->uri.protocol)
+            {
+                LINE_PRINTF(" [%s %s] ",
+                    l_index_str, gemtext.link->uri.protocol_str);
+                gemtext.hang += LINE_PRINTF_N_BYTES;
+            }
+            else
+            {
+                LINE_PRINTF(" [%s] ", l_index_str);
+                gemtext.hang += LINE_PRINTF_N_BYTES;
+            }
 
-            l->buffer_loc_len += LINE_PRINTF_N_BYTES;
-
-            gemtext.hang = LINE_PRINTF_N_BYTES;
+            // Alternative alphabetic list index, so you don't need to reach up
+            // to the number row to select links
+            //LINE_PRINTF(" [%c] ", 'a' + (int)l_index);
         }
 
         // Parse lists
-        if (!heading_level &&
-            rawline->bytes > strlen("* ") &&
+        if (rawline->bytes > strlen("* ") &&
             strncmp(rawline->s, "* ", strlen("* ")) == 0)
         {
             gemtext.indent = 1;
-            gemtext.is_list = true;
-        }
-        else if (gemtext.is_list)
-        {
-            gemtext.is_list = false;
-            gemtext.indent = 0;
+            gemtext.mode = PARSE_LIST;
         }
 
         // Apply indent
         LINE_INDENT(false);
 
-        if (gemtext.is_list)
+        if (gemtext.mode == PARSE_LIST)
         {
             // Apply our own bullet char to lists
             LINE_STRNCPY_LIT("\u2022");
@@ -438,6 +530,34 @@ typeset_gemtext(
             c <= rawline->s + rawline->bytes;
             ++c)
         {
+            // Set the most recent escape code to print at beginning of next line
+        #if 0
+            if (*c == '\x1b')
+            {
+                const char *esc_start = c;
+
+                // Get length of escape
+                for (; c <= rawline->s + rawline->bytes; ++c)
+                {
+                    if (*c == 'm')
+                    {
+                        // End of escape code
+                        gemtext.esc = esc_start;
+                        gemtext.esc_len = c - esc_start;
+                        break;
+                    }
+
+                    if (!*c ||
+                        c >= rawline->s + rawline->bytes ||
+                        *c == ' ' ||
+                        *c == '\n')
+                    {
+                        break;
+                    }
+                }
+            }
+        #endif
+
             // Found a space or we are at end of line
             if (*c == ' ' ||
                 c == rawline->s + rawline->bytes)
@@ -482,10 +602,20 @@ typeset_gemtext(
                         c_prev += chars_count;
                     }
 
+                    // Clear the escape to make clearing text a bit cleaner
+                    //LINE_STRNCPY_LIT("\x1b[0m");
+
+                    // Start next line
                     LINE_FINISH();
                     chars_this_column = 0;
                     LINE_START();
                     LINE_INDENT(true);
+
+                    // Apply the escape if we had one
+                    if (gemtext.esc)
+                    {
+                        LINE_STRNCPY(gemtext.esc, gemtext.esc_len);
+                    }
 
                     // Remove trailing whitespace
                     for (; *c_prev == ' '; ++c_prev);
@@ -504,15 +634,103 @@ typeset_gemtext(
         {
             LINE_STRNCPY_LIT("\x1b[0m");
             gemtext.need_clear_esc = false;
+            gemtext.esc = NULL;
+            gemtext.esc_len = 0;
         }
 
         LINE_FINISH();
     }
 
-    // Replace all tabs with spaces, as we can't render them properly right now
-    // (without really breaking the rendering code)
-    for (char *c = b->b; c < buffer_pos; ++c)
+    return buffer_pos - b->b;
+}
+
+/* Typeset plaintext to a pager buffer */
+static size_t
+typeset_plaintext(
+    struct typesetter *t,
+    struct pager_buffer *b,
+    size_t width_total)
+{
+    // Position in buffer that we're up to
+    char *buffer_pos = b->b;
+
+    // Iterate over each of the raw lines in the buffer
+    struct pager_buffer_line *line = b->lines;
+    const char *const buffer_end_pos = b->b + b->size;
+    for (int raw_index = 0;
+        raw_index < t->raw_line_count;
+        ++raw_index)
     {
-        if (*c == '\t') *c = ' ';
+        // The current raw line that we are on
+        const struct pager_buffer_line *const
+            rawline = &t->raw_lines[raw_index];
+
+        // Plaintext is always rendered verbatim
+        line->s = buffer_pos;
+        line->bytes = 0;
+        line->raw_index = raw_index;
+        line->raw_dist = 0;
+
+        const size_t n_bytes = rawline->bytes;
+        BUFFER_CHECK_SIZE(n_bytes);
+        strncpy(buffer_pos,
+            rawline->s,
+            min(n_bytes, buffer_end_pos - buffer_pos));
+        line->bytes += n_bytes;
+        buffer_pos += n_bytes;
+
+        // Finish line
+        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
+        if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
+            b->lines_capacity)
+        {
+            /* just abort if line count gets stupid (due to tiny widths) */
+            return 0;
+        }
+        ++b->line_count;
+        ++line;
     }
+
+    return buffer_pos - b->b;
+}
+
+bool
+typeset_page(
+    struct typesetter *t,
+    struct pager_buffer *b,
+    size_t w,
+    struct mime *m)
+{
+    // Bytes written by typesetter
+    size_t n_bytes;
+
+    struct margin
+    {
+        int l, r;
+    } margin;
+    margin.l = 4;
+    margin.r = 8;
+
+    w -= margin.l;
+    w -= margin.r;
+
+    if (mime_eqs(m, "text/gemini"))
+    {
+        // Typeset gemtext document
+        if (!typeset_start(t, b, w)) return false;
+        n_bytes = typeset_gemtext(t, b, w);
+        typeset_finish(b, n_bytes);
+        return true;
+    }
+
+    if (mime_eqs(m, "text/plain"))
+    {
+        // Typeset plaintext document
+        if (!typeset_start(t, b, w)) return false;
+        n_bytes = typeset_plaintext(t, b, w);
+        typeset_finish(b, n_bytes);
+        return true;
+    }
+
+    return false;
 }

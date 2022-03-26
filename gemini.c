@@ -2,7 +2,6 @@
 #include "state.h"
 #include "gemini.h"
 #include "tui.h"
-#include "pager.h"
 
 void
 gemini_init(void)
@@ -201,12 +200,14 @@ gemini_request(struct uri *uri)
 
         tui_cmd_status_prepare();
         tui_printf("cert fingerprint: ");
-        for (int b = 0; b < fingerprint_len; ++b)
+        size_t bytes = 8;
+        for (int b = 0; b < bytes; ++b)
         {
             tui_printf("%02x%s",
                 (unsigned char)fingerprint[b],
-                b == fingerprint_len - 1 ? "" : ":");
+                b == bytes - 1 ? "" : ":");
         }
+        tui_printf("...");
 
         X509_free(cert);
     }
@@ -246,6 +247,11 @@ gemini_request(struct uri *uri)
             char chunk[512];
             size_t recv_bytes = 0;
 
+            // Copy MIME type
+            mime_parse(&g_recv->mime,
+                response_header + 2 + 1,
+                response_header_len - 2 - 1);
+
             // Read whatever was left from the header chunk after the header
             // (or else we end up with missing content...)
             response_header_len += 2; // mind the CR-LF
@@ -276,24 +282,6 @@ gemini_request(struct uri *uri)
                 goto fail;
             }
             g_recv->size = recv_bytes;
-
-            // TODO: move this stuff away from this file
-            tui_cmd_status_prepare();
-            if (recv_bytes < 1024)
-            {
-                tui_printf("Loaded page from %s, %d b",
-                    uri->hostname, (int)recv_bytes);
-            }
-            else if (recv_bytes < 1024 * 1024)
-            {
-                tui_printf("Loaded page from %s, %.2f KiB",
-                    uri->hostname, recv_bytes / 1024.0f);
-            }
-            else
-            {
-                tui_printf("Loaded page from %s, %.2f MiB",
-                    uri->hostname, recv_bytes / (1024.0f * 1024.0f));
-            }
 
             ret_status = 0;
             break;

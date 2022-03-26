@@ -52,15 +52,16 @@ status_line_paint(void)
             switch (scroll_percent)
             {
             case 0:
-                strcpy(text, "top");
-                c->len = strlen("top");
+                c->len = snprintf(text, sizeof(text),
+                    "%s  top", g_recv->mime.str);
                 break;
             case 100:
-                strcpy(text, "bottom");
-                c->len = strlen("bottom");
+                c->len = snprintf(text, sizeof(text),
+                    "%s  bottom", g_recv->mime.str);
                 break;
             default:
-                c->len = snprintf(text, sizeof(text), "%d%%", scroll_percent);
+                c->len = snprintf(text, sizeof(text),
+                    "%s  %d%%", g_recv->mime.str, scroll_percent);
                 break;
             }
             c->bytes = c->len;
@@ -72,18 +73,14 @@ status_line_paint(void)
 
         // Draw the new text
         tui_cursor_move(x_pos, g_tui->h - 1);
-        tui_say("\x1b[30;43m");
+        tui_say("\x1b[30;42m");
         tui_sayn(text, c->bytes);
         tui_say("\x1b[0m");
 
-        // Fill over previous text
+        // Clear previous text
         if (cid == STATUS_LINE_COMPONENT_RIGHT)
         {
             tui_cursor_move(g_tui->w - (int)c->len_prev + 1, g_tui->h - 1);
-        }
-        else
-        {
-            tui_cursor_move(x_pos, g_tui->h - 1);
         }
         for (int j = c->len; j < c->len_prev; tui_say(" "), ++j);
     }

@@ -14,9 +14,8 @@ uri_parse(const char *uri, size_t uri_len)
     if (colon_pos < uri_len &&
         strncmp(uri + colon_pos, "://", 3) == 0)
     {
-        char protocol_name[PROTOCOL_NAME_MAX];
-        strncpy(protocol_name, uri, (size_t)colon_pos);
-        result.protocol = lookup_protocol(protocol_name, colon_pos);
+        strncpy(result.protocol_str, uri, (size_t)colon_pos);
+        result.protocol = lookup_protocol(result.protocol_str, colon_pos);
         protocol_name_len = (size_t)colon_pos + 3;
     }
 
@@ -80,8 +79,8 @@ uri_parse(const char *uri, size_t uri_len)
 /* Convert URI to string (returns size of result) */
 size_t
 uri_str(
-    struct uri *uri,
-    char *buf,
+    struct uri *restrict uri,
+    char *restrict buf,
     size_t buf_size,
     enum uri_string_flags flags)
 {
@@ -124,7 +123,7 @@ uri_str(
 
 /* Make a relative URI absolute */
 void
-uri_abs(struct uri *base, struct uri *rel)
+uri_abs(struct uri *restrict base, struct uri *restrict rel)
 {
     if (rel->protocol != PROTOCOL_NONE ||
         rel->hostname[0] != '\0')
@@ -138,20 +137,8 @@ uri_abs(struct uri *base, struct uri *rel)
     rel->port     = base->port;
     strncpy(rel->hostname, base->hostname, URI_HOSTNAME_MAX);
 
-    // Append path name
-    // TODO: handle relative '../', etc. paths
-    // TODO: avoid double '/'s in paths
+    // Append and normalise paths
     char old_path[URI_PATH_MAX];
     strncpy(old_path, rel->path, URI_PATH_MAX);
-    snprintf(rel->path, URI_PATH_MAX,
-        "%s/%s",
-        base->path,
-        old_path);
-}
-
-// Normalise/resolve a URI (i.e. get rid of '..', double slashes, etc.)
-void
-uri_normalise(struct uri *uri)
-{
-
+    path_normalise(base->path, old_path, rel->path);
 }

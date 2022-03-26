@@ -3,8 +3,7 @@
 
 #include "uri.h"
 
-// TODO: increase
-#define MAX_HISTORY_SIZE 4
+#define MAX_HISTORY_SIZE 64
 
 struct history_item
 {

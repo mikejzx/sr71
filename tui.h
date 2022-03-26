@@ -62,6 +62,14 @@ extern struct tui_state *g_tui;
 #define tui_say(x) ((void)!write(STDOUT_FILENO, (x), sizeof((x))))
 #define tui_sayn(x, l) ((void)!write(STDOUT_FILENO, (x), (l)))
 
+static inline void
+tui_print_size(int size)
+{
+    if (size < 1024) tui_printf("%d b", size);
+    else if (size < 1024 * 1024) tui_printf("%.2f KiB", size / 1024.0f);
+    else tui_printf("%.2f MiB", size / (1024.0f * 1024.0f));
+}
+
 void tui_init(void);
 void tui_cleanup(void);
 int tui_update(void);

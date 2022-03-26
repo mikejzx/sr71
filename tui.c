@@ -5,6 +5,7 @@
 #include "pager.h"
 #include "status_line.h"
 #include "uri.h"
+#include "local.h"
 
 struct tui_state *g_tui;
 static struct termios termios_initial;
@@ -211,6 +212,7 @@ tui_update(void)
 
             // ',' navigate history backward
             case ',':
+            case 'b':
             {
                 g_hist->ptr->last_sel = g_pager->selected_link_index;
                 g_hist->ptr->last_scroll = g_pager->scroll;
@@ -228,6 +230,7 @@ tui_update(void)
 
             // ';' navigate history forward
             case ';':
+            case 'w':
             {
                 g_hist->ptr->last_sel = g_pager->selected_link_index;
                 g_hist->ptr->last_scroll = g_pager->scroll;
@@ -241,6 +244,33 @@ tui_update(void)
                 }
 
                 tui_go_to_uri(&item->uri, false);
+            } break;
+
+            // 'Ctrl+P' go to parent directory
+            case (0100 ^ 'P'):
+            {
+                struct uri uri_rel =
+                {
+                    .protocol = PROTOCOL_NONE,
+                    .path = "../",
+                };
+                uri_abs(&g_state->uri, &uri_rel);
+                tui_go_to_uri(&uri_rel, true);
+            } break;
+
+            // 'Ctrl+R' go to root directory
+            case (0100 ^ 'R'):
+            {
+                struct uri uri;
+                memcpy(&uri, &g_state->uri, sizeof(struct uri));
+                strcpy(uri.path, "/");
+                tui_go_to_uri(&uri, true);
+            } break;
+
+            // 'r' refresh page
+            case 'r':
+            {
+                tui_go_to_uri(&g_state->uri, false);
             } break;
 
             // Pressing a number goes into links mode
@@ -318,15 +348,14 @@ tui_update(void)
                 (int)g_tui->input_caret, g_tui->w);
             tui_cursor_move(x_pos, g_tui->h);
 
-            if (buf == (0100 ^ 'W'))
+            switch (buf)
             {
-                /* Ctrl-W: backspace a whole word (TODO) */
+            /* Ctrl-W: backspace a whole word (TODO) */
+            case (0100 ^ 'W'):
                 goto backspace;
-            }
-            if (buf == '\n')
-            {
-                /* Return key; end of input */
 
+            /* Return key; end of input */
+            case '\n':
                 // Execute callback
                 if (g_tui->input_len &&
                     g_tui->cb_input_complete)
@@ -337,11 +366,10 @@ tui_update(void)
                 // Change back to normal input
                 next_mode = TUI_MODE_NORMAL;
                 goto exit_block;
-            }
-            if (buf == 0x7f)
-            {
+
+            /* Backspace key; move caret backward */
+            case 0x7f:
             backspace:
-                /* Backspace key; move caret backward */
                 if (g_tui->input_caret <= 0)
                 {
                     // Can't backspace any further
@@ -353,17 +381,24 @@ tui_update(void)
                 tui_cursor_move(x_pos - 1, g_tui->h);
                 --g_tui->input_caret;
                 --g_tui->input_len;
-
                 continue;
-            }
-            if (buf == '\x1b')
-            {
-                /* Escape key; cancel input */
+
+            /* Escape key; cancel input */
+            case '\x1b':
                 tui_clear_cmd();
                 next_mode = TUI_MODE_NORMAL;
                 goto exit_block;
+
+            /* Caret movement */
+            case (0100 ^ 'H'):
+                g_tui->input_caret = max((int)g_tui->input_caret - 1, 0);
+                continue;
+            case (0100 ^ 'L'):
+                g_tui->input_caret = min(
+                    g_tui->input_caret + 1, g_tui->input_len);
+                continue;
+
             }
-            // TODO: arrow keys
 
             // Check that we don't overflow the input
             if (g_tui->input_len + 1 >= TUI_INPUT_BUFFER_MAX)
@@ -374,7 +409,7 @@ tui_update(void)
             g_tui->input[g_tui->input_caret] = buf;
 
             // Add the text to the buffer
-            g_tui->input[g_tui->input_caret + 1] = '\0';
+            g_tui->input[g_tui->input_len + 1] = '\0';
 
             ++g_tui->input_caret;
             ++g_tui->input_len;
@@ -789,176 +824,71 @@ tui_go_to_uri(
     // Show status message
     tui_printf("Loading %s ...", g_tui->input);
 
+    int success;
+
     // Handle protocol/requests
     switch (uri.protocol)
     {
     case PROTOCOL_GEMINI:
-    {
-        int success = gemini_request(&uri);
+        success = gemini_request(&uri);
 
-        // Update the content in the pager!
         if (success == 0)
         {
-            memcpy(&g_state->uri, uri_in, sizeof(struct uri));
-            int sel, scroll;
-            if (push_hist)
+            tui_cmd_status_prepare();
+            tui_printf("Loaded content from %s, ", uri.hostname);
+            tui_print_size(g_recv->size);
+        }
+
+        break;
+
+    case PROTOCOL_FILE:
+        // Local file/directory; try to read it.
+        int is_dir;
+        success = local_request(&uri, &is_dir);
+
+        if (success == 0)
+        {
+            tui_cmd_status_prepare();
+            if (is_dir)
             {
-                history_push(&g_state->uri,
-                    g_pager->selected_link_index, g_pager->scroll);
-                sel = -1;
-                scroll = 0;
+                tui_printf("Loaded directory, %d entries", is_dir - 1);
             }
             else
             {
-                // Page is presumably from history, so read the
-                // last selection/scroll values
-                sel = g_hist->ptr->last_sel;
-                scroll = g_hist->ptr->last_scroll;
+                tui_printf("Loaded local file, ");
+                tui_print_size(g_recv->size);
             }
-            pager_update_page(sel, scroll);
         }
-    } break;
+        break;
 
-    case PROTOCOL_FILE:
+    default:
+        success = -1;
+        break;
+    }
+
+    if (success == 0)
     {
-        // Local file; try to open it.
+        // Update current URI state
+        memcpy(&g_state->uri, uri_in, sizeof(struct uri));
 
-        static char path[FILENAME_MAX];
-        uri_str(&uri, path, sizeof(path), URI_FLAGS_NO_PROTOCOL_BIT);
-
-        // Check what type of file the URI is
-        struct stat path_stat;
-        if (stat(path, &path_stat) < 0)
+        int sel, scroll;
+        if (push_hist)
         {
-            tui_cmd_status_prepare();
-            tui_say("No such file or directory");
-            break;
-        }
-
-        bool is_dir = path_stat.st_mode & S_IFDIR;
-
-        if (!is_dir)
-        {
-            // Regular file
-            FILE *file = fopen(path, "r");
-            if (!file)
-            {
-                tui_cmd_status_prepare();
-                tui_say("Failed to open file");
-                break;
-            }
-
-            tui_cmd_status_prepare();
-            tui_printf("Loading local file %s", path);
-
-            // Read size of file and resize buffer if needed
-            fseek(file, 0, SEEK_END);
-            size_t len = ftell(file);
-            recv_buffer_check_size(len);
-
-            // Read file
-            fseek(file, 0, SEEK_SET);
-            bool success = fread(g_recv->b, len, 1, file) > 0;
-            fclose(file);
-
-            if (success)
-            {
-                // Update pager content
-                g_recv->size = len;
-                memcpy(&g_state->uri, uri_in, sizeof(struct uri));
-                int sel, scroll;
-                if (push_hist)
-                {
-                    history_push(&g_state->uri,
-                        g_pager->selected_link_index, g_pager->scroll);
-                    sel = -1;
-                    scroll = 0;
-                }
-                else
-                {
-                    // Page is presumably from history, so read the
-                    // last selection/scroll values
-                    sel = g_hist->ptr->last_sel;
-                    scroll = g_hist->ptr->last_scroll;
-                }
-                pager_update_page(sel, scroll);
-
-                tui_cmd_status_prepare();
-                tui_printf("Loaded local file, %d b", 0);
-            }
+            history_push(&g_state->uri,
+                g_pager->selected_link_index, g_pager->scroll);
+            sel = -1;
+            scroll = 0;
         }
         else
         {
-            // Read directory and create listing
-            DIR *dir = opendir(path);
-            if (!dir)
-            {
-                tui_cmd_status_prepare();
-                tui_say("failed to open directory");
-                break;
-            }
-            size_t max_len = FILENAME_MAX + 128;
-            char *buf_tmp = malloc(max_len);
-            size_t bytes;
-
-            bytes = snprintf(buf_tmp, max_len,
-                "# %s\n"
-                "\n"
-                "=> ..\n",
-                path);
-            recv_buffer_check_size(bytes);
-            strncpy(g_recv->b, buf_tmp, bytes);
-            g_recv->size = bytes;
-
-            // Iterate over the directory and generate a gemtext file of the
-            // directory listing
-            int n_ent = 0;
-            for (struct dirent *entry = readdir(dir);
-                entry;
-                entry = readdir(dir))
-            {
-                if (strcmp(entry->d_name, ".") == 0 ||
-                    strcmp(entry->d_name, "..") == 0) continue;
-
-                bytes = snprintf(buf_tmp, max_len,
-                    "=> %s\n",
-                    entry->d_name);
-
-                recv_buffer_check_size(g_recv->size + bytes);
-                strncpy(g_recv->b + g_recv->size, buf_tmp, bytes);
-                g_recv->size += bytes;
-
-                ++n_ent;
-            }
-
-            (void)closedir(dir);
-            free(buf_tmp);
-
-            memcpy(&g_state->uri, uri_in, sizeof(struct uri));
-
-            int sel, scroll;
-            if (push_hist)
-            {
-                history_push(&g_state->uri,
-                    g_pager->selected_link_index, g_pager->scroll);
-                sel = -1;
-                scroll = 0;
-            }
-            else
-            {
-                // Page is presumably from history, so read the
-                // last selection/scroll values
-                sel = g_hist->ptr->last_sel;
-                scroll = g_hist->ptr->last_scroll;
-            }
-            pager_update_page(sel, scroll);
-
-            tui_cmd_status_prepare();
-            tui_printf("Loaded directory, %d entries", n_ent);
+            // Page is presumably from history, so read the
+            // last selection/scroll values
+            sel = g_hist->ptr->last_sel;
+            scroll = g_hist->ptr->last_scroll;
         }
-    } break;
 
-    default: break;
+        // Update the pager
+        pager_update_page(sel, scroll);
     }
 }
 

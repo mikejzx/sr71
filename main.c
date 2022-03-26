@@ -3,6 +3,7 @@
 #include "state.h"
 #include "status_line.h"
 #include "tui.h"
+#include "tofu.h"
 
 struct state *g_state;
 struct recv_buffer *g_recv;
@@ -29,6 +30,8 @@ main(void)
     tui_init();
 
     gemini_init();
+
+    tofu_init();
 
     // Set some temporary content
 #if 0
@@ -139,6 +142,7 @@ main(void)
     g_recv->size = strlen(PAGER_CONTENT) + 1;
     recv_buffer_check_size(g_recv->size);
     memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
+    mime_parse(&g_recv->mime, MIME_GEMTEXT, strlen(MIME_GEMTEXT));
 
     // Typeset the content
     pager_update_page(-1, 0);
@@ -160,6 +164,8 @@ program_exited(void)
     static bool exited = false;
     if (exited) return;
     exited = true;
+
+    tofu_deinit();
 
     gemini_deinit();
 
