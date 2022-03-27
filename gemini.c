@@ -2,6 +2,7 @@
 #include "state.h"
 #include "gemini.h"
 #include "tui.h"
+#include "tofu.h"
 
 void
 gemini_init(void)
@@ -192,22 +193,24 @@ gemini_request(struct uri *uri)
     }
     else
     {
-        // Get X509 fingerprint/digest
-        const EVP_MD *digest = EVP_get_digestbyname("sha256");
-        unsigned char fingerprint[EVP_MAX_MD_SIZE];
-        unsigned fingerprint_len;
-        X509_digest(cert, digest, fingerprint, &fingerprint_len);
-
-        tui_cmd_status_prepare();
-        tui_printf("cert fingerprint: ");
-        size_t bytes = 8;
-        for (int b = 0; b < bytes; ++b)
+        int tofu_status = tofu_verify_or_add(uri->hostname, cert);
+        switch (tofu_status)
         {
-            tui_printf("%02x%s",
-                (unsigned char)fingerprint[b],
-                b == bytes - 1 ? "" : ":");
+        case TOFU_VERIFY_OK:
+            tui_cmd_status_prepare();
+            tui_say("tofu: host fingerprints match");
+            break;
+        case TOFU_VERIFY_FAIL:
+            // TODO: prompt user to decide whether to trust new certificate
+            tui_cmd_status_prepare();
+            tui_say("tofu: fingerprint mismatch!");
+            goto fail;
+        case TOFU_VERIFY_NEW:
+            tui_cmd_status_prepare();
+            tui_say("tofu: blindly trusting certificate "
+                "from unrecognised host");
+            break;
         }
-        tui_printf("...");
 
         X509_free(cert);
     }
@@ -235,6 +238,8 @@ gemini_request(struct uri *uri)
     }
 
     int response_header_len = strcspn(response_header, "\r");
+    int response_header_len_mime = strcspn(response_header, "\r;");
+    response_header[response_header_len_mime] = '\0';
     response_header[response_header_len] = '\0';
     tui_cmd_status_prepare();
     tui_printf("Server responded: %s", response_header);
@@ -250,7 +255,7 @@ gemini_request(struct uri *uri)
             // Copy MIME type
             mime_parse(&g_recv->mime,
                 response_header + 2 + 1,
-                response_header_len - 2 - 1);
+                response_header_len_mime - 2 - 1);
 
             // Read whatever was left from the header chunk after the header
             // (or else we end up with missing content...)

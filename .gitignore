@@ -5,3 +5,4 @@ valgrind-out*
 patches/*
 *.gch
 TODO
+trusted_hosts

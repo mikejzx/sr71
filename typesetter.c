@@ -157,12 +157,7 @@ typeset_gemtext(
         // Reference to the link being parsed (if any)
         struct pager_link *link;
 
-        union
-        {
-            bool link_group_iterated;
-            int link_group_maxidx;
-        };
-        int link_group_maxidx_strlen;
+        int link_maxidx_strlen;
 
         // Current indent level
         int indent;
@@ -270,11 +265,31 @@ typeset_gemtext(
     gemtext.raw_dist += LINE_PRINTF_N_BYTES; \
     if (gemtext.link) gemtext.link->buffer_loc_len += LINE_PRINTF_N_BYTES;
 
+    int raw_index;
+
+    // Count links in the page
+    {
+        int maxidx = 0;
+        for (raw_index = 0;
+            raw_index < t->raw_line_count;
+            ++raw_index)
+        {
+            const struct pager_buffer_line *const
+                l = &t->raw_lines[raw_index];
+            if (l->bytes > strlen("=>") &&
+                strncmp(l->s, "=>", strlen("=>")) == 0)
+            {
+                ++maxidx;
+            }
+        }
+        gemtext.link_maxidx_strlen = snprintf(NULL, 0, "%d", maxidx);
+    }
+
     // Iterate over each of the raw lines in the buffer
     struct pager_buffer_line *line = b->lines;
     const char *const buffer_end_pos = b->b + b->size;
     bool line_started = false;
-    for (int raw_index = 0;
+    for (raw_index = 0;
         raw_index < t->raw_line_count;
         ++raw_index)
     {
@@ -282,12 +297,7 @@ typeset_gemtext(
         const struct pager_buffer_line *const
             rawline = &t->raw_lines[raw_index];
 
-        if (gemtext.link)
-        {
-            gemtext.link_group_iterated = false;
-            gemtext.link_group_maxidx = gemtext.link_group_maxidx_strlen = 0;
-            gemtext.link = NULL;
-        }
+        gemtext.link = NULL;
         gemtext.raw_dist = 0;
         gemtext.hang = 0;
         gemtext.mode = PARSE_PARAGRAPH;
@@ -385,27 +395,6 @@ typeset_gemtext(
         if (rawline->bytes > strlen("=>") &&
             strncmp(rawline->s, "=>", strlen("=>")) == 0)
         {
-            if (!gemtext.link_group_iterated)
-            {
-                // Count the number of links in this "link group" (i.e.
-                // consecutive links on the page)
-                gemtext.link_group_maxidx = g_pager->link_count;
-                for (int x = raw_index + 1; x < t->raw_line_count; ++x)
-                {
-                    const struct pager_buffer_line *const
-                        l = &t->raw_lines[x];
-                    if (!(l->bytes > strlen("=>") &&
-                        strncmp(l->s, "=>", strlen("=>")) == 0))
-                    {
-                        break;
-                    }
-                    ++gemtext.link_group_maxidx;
-                }
-                gemtext.link_group_maxidx_strlen = snprintf(
-                    NULL, 0,
-                    "%d", gemtext.link_group_maxidx);
-            }
-
             pager_check_link_capacity();
             size_t l_index = g_pager->link_count++;
 
@@ -472,7 +461,7 @@ typeset_gemtext(
             int l_index_strlen = snprintf(l_index_str, sizeof(l_index_str),
                 "%d", (int)l_index);
             gemtext.hang =
-                max(gemtext.link_group_maxidx_strlen - l_index_strlen, 0);
+                max(gemtext.link_maxidx_strlen - l_index_strlen, 0);
             LINE_PRINTF("%*s", gemtext.hang, "");
 
             // Print link prefix

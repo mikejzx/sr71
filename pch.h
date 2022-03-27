@@ -1,6 +1,12 @@
 #ifndef PCH_H
 #define PCH_H
 
+// (working title)
+#define PROGRAM_NAME "vigem"
+//#define PROGRAM_DATA_DIR "~/.local/share/" PROGRAM_NAME "/"
+#define PROGRAM_DATA_DIR "./"
+#define TOFU_FILE_PATH PROGRAM_DATA_DIR "trusted_hosts"
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
