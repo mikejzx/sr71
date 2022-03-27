@@ -1,12 +1,12 @@
 #ifndef STATE_H
 #define STATE_H
 
-#include "tui.h"
-#include "pager.h"
 #include "gemini.h"
-//#include "gopher.h"
+#include "gopher.h"
 #include "history.h"
 #include "mime.h"
+#include "pager.h"
+#include "tui.h"
 
 struct state
 {
@@ -36,7 +36,7 @@ struct state
 
     // Client states
     struct gemini gem;
-    //struct gopher ph;
+    struct gopher ph;
 
     // History stack (for undo/redo)
     struct history_stack hist;

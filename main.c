@@ -30,7 +30,6 @@ main(void)
     tui_init();
 
     gemini_init();
-
     tofu_init();
 
     // Set some temporary content
@@ -130,13 +129,20 @@ main(void)
         "=> gemini://gemini.circumlunar.space/ Gemini Homepage\n"
         "=> gemini://gemini.circumlunar.space/docs/ Gemini Documentation\n"
         "=> gemini://example.com/\n"
+        "=> gopher://i-logout.cz:70/1/bongusta Test gopher page\n"
+        "=> gopher://gopher.quux.org:70/\n"
+        "=> gopher://gopher.floodgap.com Floodgap\n"
         "=> file:///home/mike/pages/gemtext/gemini.circumlunar.space/home.gmi Local file test\n"
         "=> file:///home/mike/ Local directory test\n"
         "=> gemini://example.com/ A link with a very long name that will wrap around and hopefully work properly\n"
         "=> gemini://example.com/\n"
         "=> gemini://midnight.pub/\n"
+        "=> gemini://rawtext.club/~ploum/2022-03-24-ansi_html.gmi/\n"
         "\n"
         "# Very long heading that should wrap very nicely blah blah blah blah blah\n"
+        "This is a test paragraph\n"
+        "> This is a test blockquote that should also wrap pretty nice I reckon, blah blah blah\n"
+        "> This is a test blockquote that should also wrap pretty nice I reckon, blah blah blah\n"
         "This is a test paragraph\n";
 #endif
     g_recv->size = strlen(PAGER_CONTENT) + 1;
@@ -168,6 +174,7 @@ program_exited(void)
     tofu_deinit();
 
     gemini_deinit();
+    gopher_deinit();
 
     tui_cleanup();
 

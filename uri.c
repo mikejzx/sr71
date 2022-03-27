@@ -12,11 +12,20 @@ uri_parse(const char *uri, size_t uri_len)
     int colon_pos = strcspn(uri, ":");
     size_t protocol_name_len = 0;
     if (colon_pos < uri_len &&
-        strncmp(uri + colon_pos, "://", 3) == 0)
+        (strncmp(uri + colon_pos, "://", strlen("://")) == 0 ||
+         strncmp(uri, PROTOCOL_NAMES[PROTOCOL_MAILTO], colon_pos) == 0))
     {
         strncpy(result.protocol_str, uri, (size_t)colon_pos);
         result.protocol = lookup_protocol(result.protocol_str, colon_pos);
-        protocol_name_len = (size_t)colon_pos + 3;
+        switch(result.protocol)
+        {
+        case PROTOCOL_MAILTO:
+            protocol_name_len = (size_t)colon_pos + strlen(":");
+            break;
+        default:
+            protocol_name_len = (size_t)colon_pos + strlen("://");
+            break;
+        }
     }
 
     // Get optional port (0 if none provided)
@@ -94,6 +103,19 @@ uri_str(
         flags & URI_FLAGS_NO_PROTOCOL_BIT))
     {
         strcpy(scheme, PROTOCOL_NAMES[uri->protocol]);
+        switch(uri->protocol)
+        {
+        case PROTOCOL_MAILTO:
+            strcat(scheme, ":");
+            break;
+        default:
+            strcat(scheme, "://");
+            break;
+        }
+    }
+    else if (uri->protocol == PROTOCOL_UNKNOWN && *uri->protocol_str)
+    {
+        strcpy(scheme, uri->protocol_str);
         strcat(scheme, "://");
     }
 

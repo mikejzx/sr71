@@ -14,6 +14,10 @@ enum uri_protocol
     PROTOCOL_FINGER,
     PROTOCOL_FILE,
 
+    // Special protocols which have no '//'
+    PROTOCOL_MAILTO,
+    //PROTOCOL_MAGNET,
+
     PROTOCOL_COUNT
 };
 
@@ -25,6 +29,8 @@ static const char *PROTOCOL_NAMES[PROTOCOL_COUNT] =
     [PROTOCOL_GOPHER]  = "gopher",
     [PROTOCOL_FINGER]  = "finger",
     [PROTOCOL_FILE]    = "file",
+    [PROTOCOL_MAILTO]  = "mailto",
+    //[PROTOCOL_MAGNET]  = "magnet",
 };
 
 /* Lookup a protocol from string */

@@ -1,8 +1,8 @@
 #include "pch.h"
-#include "state.h"
 #include "gemini.h"
-#include "tui.h"
+#include "state.h"
 #include "tofu.h"
+#include "tui.h"
 
 void
 gemini_init(void)
@@ -46,97 +46,11 @@ gemini_request(struct uri *uri)
         !uri->hostname ||
         uri->hostname[0] == '\0') return -1;
 
-    tui_cmd_status_prepare();
-    tui_say("Looking up address ...");
-
-    // I'll never know why on Earth getaddrinfo takes a string here
-    char port_str[5];
-    if (uri->port == 0)
+    gem->sock = connect_socket_to(
+        uri->hostname,
+        uri->port == 0 ? 1965 : uri->port);
+    if (!gem->sock)
     {
-        strncpy(port_str, "1965", sizeof(port_str));
-    }
-    else
-    {
-        snprintf(port_str, sizeof(port_str), "%04d", uri->port);
-    }
-
-    // Get host addresses
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = IPPROTO_TCP;
-    hints.ai_flags = 0;
-    hints.ai_protocol = 0;
-    hints.ai_canonname = NULL;
-    hints.ai_addr = NULL;
-    hints.ai_next = NULL;
-    struct addrinfo *res = NULL;
-    getaddrinfo(uri->hostname, port_str, &hints, &res);
-
-    // Connect to any of the addresses we can
-    bool connected = false;
-    for (struct addrinfo *i = res; i != NULL; i = i->ai_next)
-    {
-        // Create socket
-        if ((gem->sock = socket(
-            i->ai_addr->sa_family,
-            SOCK_STREAM, 0)) < 0)
-        {
-            //fprintf(stderr, "gemini: failed to create socket\n");
-            tui_cmd_status_prepare();
-            tui_say("error: failed to create socket");
-            gem->sock = 0;
-            continue;
-        }
-
-        // Setup timeout on socket
-        static const struct timeval timeout =
-        {
-            .tv_sec = 5,
-            .tv_usec = 0,
-        };
-        if (setsockopt(gem->sock, SOL_SOCKET, SO_RCVTIMEO,
-            (char *)&timeout, sizeof(timeout)) < 0 ||
-            setsockopt(gem->sock, SOL_SOCKET, SO_SNDTIMEO,
-            (char *)&timeout, sizeof(timeout)) < 0)
-        {
-            tui_cmd_status_prepare();
-            tui_say("error: failed to set socket timeout");
-            gem->sock = 0;
-            continue;
-        }
-
-        tui_cmd_status_prepare();
-        tui_say("Connecting ...");
-
-        // Connect socket
-        if (connect(gem->sock, (struct sockaddr *)i->ai_addr,
-            i->ai_addrlen) < 0)
-        {
-            //fprintf(stderr, "gemini: failed to connect to '%s'\n", uri->hostname);
-
-            tui_cmd_status_prepare();
-            tui_printf("error: failed to connect to %s", uri->hostname);
-            gem->sock = 0;
-            continue;
-        }
-        connected = true;
-
-        break;
-    }
-    freeaddrinfo(res);
-    if (!connected)
-    {
-        //fprintf(stderr, "gemini: no address for '%s'\n", uri->hostname);
-        tui_cmd_status_prepare();
-        if (res == NULL)
-        {
-            tui_printf("error: no addresses for '%s'", uri->hostname);
-        }
-        else
-        {
-            tui_printf("error: could not connect to '%s'", uri->hostname);
-        }
         goto fail;
     }
 
@@ -157,8 +71,6 @@ gemini_request(struct uri *uri)
     int ssl_status;
     if ((ssl_status = SSL_connect(gem->ssl)) != 1)
     {
-        //fprintf(stderr, "gemini: TLS handshake failed '%s'\n", uri->hostname);
-
     #if 0
         unsigned long reason = ERR_get_error();
         const char *reason_str = ERR_reason_error_string(reason);

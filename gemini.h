@@ -1,7 +1,7 @@
 #ifndef GEMINI_H
 #define GEMINI_H
 
-#include "uri.h"
+struct uri;
 
 /*
  * gemini.h

@@ -21,4 +21,6 @@ size_t utf8_strnlen_w_formats(const char *, size_t);
 /* Number of bytes that exist in a length (inverse of above) */
 size_t utf8_size_w_formats(const char *, size_t);
 
+int connect_socket_to(const char *, int port);
+
 #endif

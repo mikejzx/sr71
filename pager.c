@@ -303,7 +303,7 @@ pager_select_last_link_visible(void)
     for (int i = g_pager->link_count - 1; i > -1; --i)
     {
         // Skip lines that are after where the visible buffer starts
-        if (g_pager->links[i].line_index >
+        if (g_pager->links[i].line_index >=
             g_pager->scroll + g_pager->visible_buffer.h) continue;
 
         g_pager->selected_link_index = i;

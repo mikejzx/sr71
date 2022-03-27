@@ -4,6 +4,7 @@
 #define MIME_TYPE_MAX 128
 
 #define MIME_GEMTEXT "text/gemini"
+#define MIME_GOPHERMAP "text/gophermap"
 #define MIME_PLAINTEXT "text/plain"
 
 struct mime

@@ -152,6 +152,7 @@ typeset_gemtext(
             PARSE_PARAGRAPH = 0,
             PARSE_VERBATIM,
             PARSE_LIST,
+            PARSE_BLOCKQUOTE,
         } mode;
 
         // Reference to the link being parsed (if any)
@@ -183,6 +184,10 @@ typeset_gemtext(
 
         // Escape formatting code needs to be cleared before the next line
         bool need_clear_esc;
+
+        // Prefix applied to wrapped lines
+        char prefix[8];
+        size_t prefix_len;
     } gemtext;
     memset(&gemtext, 0, sizeof(struct gemtext_state));
 
@@ -300,10 +305,11 @@ typeset_gemtext(
         gemtext.link = NULL;
         gemtext.raw_dist = 0;
         gemtext.hang = 0;
-        gemtext.mode = PARSE_PARAGRAPH;
         gemtext.indent = 0;
         gemtext.esc = NULL;
         gemtext.esc_len = 0;
+        *gemtext.prefix = 0;
+        gemtext.prefix_len = 0;
 
         // Start a new line
         LINE_START();
@@ -327,6 +333,8 @@ typeset_gemtext(
             LINE_FINISH();
             continue;
         }
+
+        gemtext.mode = PARSE_PARAGRAPH;
 
         // Check for headings
         int heading_level = 0;
@@ -491,6 +499,21 @@ typeset_gemtext(
             gemtext.mode = PARSE_LIST;
         }
 
+        // Parse blockquotes
+        if (rawline->bytes > strlen(">") &&
+            strncmp(rawline->s, ">", strlen(">")) == 0)
+        {
+            gemtext.esc = buffer_pos;
+            const char *BLOCKQUOTE_ESC = "\x1b[2m";
+            LINE_STRNCPY_LIT(BLOCKQUOTE_ESC);
+            gemtext.esc_len = strlen(BLOCKQUOTE_ESC);
+            gemtext.need_clear_esc = true;
+            gemtext.indent = 2;
+            gemtext.mode = PARSE_BLOCKQUOTE;
+
+            gemtext.raw_bytes_skip = strspn(rawline->s + 1, " ") + 1;
+        }
+
         // Apply indent
         LINE_INDENT(false);
 
@@ -504,6 +527,14 @@ typeset_gemtext(
 
             // Skip over the asterisk char
             gemtext.raw_bytes_skip = 1;
+        }
+        else if (gemtext.mode == PARSE_BLOCKQUOTE)
+        {
+            // Set blockquote prefix (for both the initial and wrapped lines)
+            LINE_STRNCPY_LIT("> ");
+            strcpy(gemtext.prefix, "> ");
+            gemtext.prefix_len = strlen(gemtext.prefix);
+            gemtext.indent = 2;
         }
 
         // Margins are accounted for in "width total" here
@@ -606,6 +637,12 @@ typeset_gemtext(
                         LINE_STRNCPY(gemtext.esc, gemtext.esc_len);
                     }
 
+                    // Apply prefix if we have one
+                    if (*gemtext.prefix)
+                    {
+                        LINE_STRNCPY(gemtext.prefix, gemtext.prefix_len);
+                    }
+
                     // Remove trailing whitespace
                     for (; *c_prev == ' '; ++c_prev);
                 }
@@ -631,14 +668,20 @@ typeset_gemtext(
     }
 
     return buffer_pos - b->b;
+
+#undef LINE_START
+#undef LINE_FINISH
+#undef LINE_INDENT
+#undef LINE_STRNCPY
+#undef LINE_STRNCPY_LIT
+#undef LINE_PRINTF
 }
 
 /* Typeset plaintext to a pager buffer */
 static size_t
 typeset_plaintext(
     struct typesetter *t,
-    struct pager_buffer *b,
-    size_t width_total)
+    struct pager_buffer *b)
 {
     // Position in buffer that we're up to
     char *buffer_pos = b->b;
@@ -673,7 +716,6 @@ typeset_plaintext(
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
             b->lines_capacity)
         {
-            /* just abort if line count gets stupid (due to tiny widths) */
             return 0;
         }
         ++b->line_count;
@@ -681,6 +723,175 @@ typeset_plaintext(
     }
 
     return buffer_pos - b->b;
+}
+
+
+/* Typeset a gophermap */
+static size_t
+typeset_gophermap(
+    struct typesetter *t,
+    struct pager_buffer *b)
+{
+    // Position in buffer that we're up to
+    char *buffer_pos = b->b;
+
+    struct uri uri;
+
+    // Set URI protocol
+    uri.protocol = PROTOCOL_GOPHER;
+    strcpy(uri.protocol_str, "gopher");
+
+    // Helper macros
+#define LINE_STRNCPY(str, len) \
+    do \
+    { \
+        const size_t n_bytes = (len); \
+        BUFFER_CHECK_SIZE(n_bytes); \
+        strncpy(buffer_pos, \
+            (str), \
+            min(n_bytes, buffer_end_pos - buffer_pos)); \
+        line->bytes += n_bytes; \
+        buffer_pos += n_bytes; \
+    } while(0)
+#define LINE_STRNCPY_LIT(str) LINE_STRNCPY((str), strlen((str)))
+#define LINE_PRINTF(fmt, ...) \
+    do \
+    { \
+        const size_t n_bytes = \
+            snprintf(buffer_pos, \
+                buffer_end_pos - buffer_pos, \
+                (fmt), \
+                __VA_ARGS__); \
+        BUFFER_CHECK_SIZE(n_bytes); \
+        line->bytes += n_bytes; \
+        buffer_pos += n_bytes; \
+    } while(0);
+#define ADD_LINK() \
+    {\
+        pager_check_link_capacity(); \
+        l_index = g_pager->link_count++; \
+        struct pager_link *link = &g_pager->links[l_index]; \
+        memcpy(&link->uri, &uri, sizeof(struct uri)); \
+        link->line_index = b->line_count; \
+        link->buffer_loc = buffer_pos; \
+        link->buffer_loc_len = item_display_len; \
+    }
+
+    // Iterate over each of the raw lines in the buffer
+    struct pager_buffer_line *line = b->lines;
+    const char *const buffer_end_pos = b->b + b->size;
+    for (int raw_index = 0;
+        raw_index < t->raw_line_count;
+        ++raw_index)
+    {
+        // The current raw line that we are on
+        const struct pager_buffer_line *const
+            rawline = &t->raw_lines[raw_index];
+
+        line->s = buffer_pos;
+        line->bytes = 0;
+        line->raw_index = raw_index;
+        line->raw_dist = 0;
+
+        // Write display string to the buffer
+        const char *item_display = rawline->s + 1;
+        const size_t item_display_len = strcspn(item_display, "\t");
+
+        // Get item path
+        const char *item_path = item_display + item_display_len + 1;
+        const size_t item_path_len = strcspn(item_path, "\t");
+        strncpy(uri.path, item_path, min(item_path_len, URI_PATH_MAX));
+        uri.path[item_path_len] = '\0';
+
+        // Get item hostname
+        const char *item_hostname = item_path + item_path_len + 1;
+        const size_t item_hostname_len = strcspn(item_hostname, "\t");
+        strncpy(uri.hostname, item_hostname,
+            min(item_hostname_len, URI_HOSTNAME_MAX));
+        uri.hostname[item_hostname_len] = '\0';
+
+        // Get item port
+        uri.port = atoi(item_hostname + item_hostname_len + 1);
+
+        // Check item type for selector
+        size_t l_index = 0;
+        switch(*rawline->s)
+        {
+        // Informational message
+        case 'i':
+            break;
+
+        // Error code to indicate failure
+        case '3':
+            break;
+
+        /* All types below are displayed as links */
+
+        // Document
+        case 'd':
+            ADD_LINK();
+            LINE_PRINTF(" [%d document] ", (int)l_index);
+            break;
+
+        // HTML file
+        case 'h':
+            ADD_LINK();
+            LINE_PRINTF(" [%d html] ", (int)l_index);
+            break;
+
+        // Sound file
+        case 's':
+            ADD_LINK();
+            LINE_PRINTF(" [%d sound] ", (int)l_index);
+            break;
+
+        // File (usually text)
+        case '0':
+            ADD_LINK();
+            LINE_PRINTF(" [%d text] ", (int)l_index);
+            break;
+
+        // Directory
+        case '1':
+            ADD_LINK();
+            LINE_PRINTF(" [%d dir] ", (int)l_index);
+            break;
+
+        // Binary files
+        case '9':
+        case 'I':
+        case '2':
+            ADD_LINK();
+            LINE_PRINTF(" [%d binary] ", (int)l_index);
+            break;
+
+        // Unknown/unsupported item type
+        default:
+            ADD_LINK();
+            LINE_PRINTF(" [%d unsupported] ", (int)l_index);
+            break;
+        }
+
+        // Write display string
+        LINE_STRNCPY(item_display, item_display_len);
+
+        // Finish line
+        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
+        if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
+            b->lines_capacity)
+        {
+            return 0;
+        }
+        ++b->line_count;
+        ++line;
+    }
+
+    return buffer_pos - b->b;
+
+#undef LINE_STRNCPY
+#undef LINE_STRNCPY_LIT
+#undef LINE_PRINTF
+#undef ADD_LINK
 }
 
 bool
@@ -703,7 +914,7 @@ typeset_page(
     w -= margin.l;
     w -= margin.r;
 
-    if (mime_eqs(m, "text/gemini"))
+    if (mime_eqs(m, MIME_GEMTEXT))
     {
         // Typeset gemtext document
         if (!typeset_start(t, b, w)) return false;
@@ -712,11 +923,19 @@ typeset_page(
         return true;
     }
 
-    if (mime_eqs(m, "text/plain"))
+    if (mime_eqs(m, MIME_GOPHERMAP))
+    {
+        if (!typeset_start(t, b, w)) return false;
+        n_bytes = typeset_gophermap(t, b);
+        typeset_finish(b, n_bytes);
+        return true;
+    }
+
+    if (mime_eqs(m, MIME_PLAINTEXT))
     {
         // Typeset plaintext document
         if (!typeset_start(t, b, w)) return false;
-        n_bytes = typeset_plaintext(t, b, w);
+        n_bytes = typeset_plaintext(t, b);
         typeset_finish(b, n_bytes);
         return true;
     }

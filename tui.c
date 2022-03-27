@@ -799,7 +799,6 @@ tui_go_to_uri(
     tui_cmd_status_prepare();
 
     if (uri.protocol == PROTOCOL_UNKNOWN ||
-        uri.protocol == PROTOCOL_GOPHER ||
         uri.protocol == PROTOCOL_FINGER)
     {
         // Show error message
@@ -830,7 +829,10 @@ tui_go_to_uri(
     switch (uri.protocol)
     {
     case PROTOCOL_GEMINI:
-        success = gemini_request(&uri);
+    case PROTOCOL_GOPHER:
+        success = uri.protocol == PROTOCOL_GEMINI
+            ? gemini_request(&uri)
+            : gopher_request(&uri);
 
         if (success == 0)
         {
@@ -838,7 +840,6 @@ tui_go_to_uri(
             tui_printf("Loaded content from %s, ", uri.hostname);
             tui_print_size(g_recv->size);
         }
-
         break;
 
     case PROTOCOL_FILE:

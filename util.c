@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "util.h"
+#include "tui.h"
 
 int
 path_normalise(
@@ -160,3 +161,95 @@ utf8_size_w_formats(const char *s, size_t l)
     return bytes;
 }
 
+/* Connect a socket to a host address */
+int
+connect_socket_to(const char *hostname, int port)
+{
+    if (port == 0) return 0;
+    int sock;
+
+    // I'll never know why on Earth getaddrinfo takes a string here
+    char port_str[5];
+    snprintf(port_str, sizeof(port_str), "%04d", port);
+
+    tui_cmd_status_prepare();
+    tui_say("Looking up address ...");
+
+    // Get host addresses
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = IPPROTO_TCP;
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;
+    hints.ai_canonname = NULL;
+    hints.ai_addr = NULL;
+    hints.ai_next = NULL;
+    struct addrinfo *res = NULL;
+    getaddrinfo(hostname, port_str, &hints, &res);
+
+    // Connect to any of the addresses we can
+    bool connected = false;
+    for (struct addrinfo *i = res; i != NULL; i = i->ai_next)
+    {
+        // Create socket
+        if ((sock = socket(
+            i->ai_addr->sa_family,
+            SOCK_STREAM, 0)) < 0)
+        {
+            tui_cmd_status_prepare();
+            tui_say("error: failed to create socket");
+            sock = 0;
+            continue;
+        }
+
+        // Setup timeout on socket
+        static const struct timeval timeout =
+        {
+            .tv_sec = 5,
+            .tv_usec = 0,
+        };
+        if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+            (char *)&timeout, sizeof(timeout)) < 0 ||
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+            (char *)&timeout, sizeof(timeout)) < 0)
+        {
+            tui_cmd_status_prepare();
+            tui_say("error: failed to set socket timeout");
+            sock = 0;
+            continue;
+        }
+
+        tui_cmd_status_prepare();
+        tui_say("Connecting ...");
+
+        // Connect socket
+        if (connect(sock, (struct sockaddr *)i->ai_addr,
+            i->ai_addrlen) < 0)
+        {
+            tui_cmd_status_prepare();
+            tui_printf("error: failed to connect to %s", hostname);
+            sock = 0;
+            continue;
+        }
+        connected = true;
+
+        break;
+    }
+    if (!connected)
+    {
+        tui_cmd_status_prepare();
+        if (res == NULL)
+        {
+            tui_printf("error: no addresses for '%s'", hostname);
+        }
+        else
+        {
+            tui_printf("error: could not connect to '%s'", hostname);
+        }
+        freeaddrinfo(res);
+        return 0;
+    }
+    freeaddrinfo(res);
+    return sock;
+}
