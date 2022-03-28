@@ -69,8 +69,9 @@ uri_parse(const char *uri, size_t uri_len)
     }
     else
     {
-        // No path
-        result.path[0] = '\0';
+        // Empty path
+        result.path[0] = '/';
+        result.path[1] = '\0';
     }
 
 #if 0

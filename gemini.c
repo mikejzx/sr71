@@ -64,7 +64,7 @@ gemini_request(struct uri *uri)
         TLSEXT_NAMETYPE_host_name,
         (void *)uri->hostname);
 
-    tui_cmd_status_prepare();
+    tui_status_prepare();
     tui_say("TLS handshake ...");
 
     // TLS handshake
@@ -76,7 +76,7 @@ gemini_request(struct uri *uri)
         const char *reason_str = ERR_reason_error_string(reason);
     #endif
 
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         if (ssl_status == 0)
         {
             tui_printf("error: TLS connection closed");
@@ -91,7 +91,7 @@ gemini_request(struct uri *uri)
         goto fail;
     }
 
-    tui_cmd_status_prepare();
+    tui_status_prepare();
     tui_say("Successful connection");
 
     // Verify certificate (using TOFU)
@@ -99,7 +99,7 @@ gemini_request(struct uri *uri)
     if (cert == NULL)
     {
         // Somehow no certificate was presented
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_say("error: server did not present a certificate");
         goto fail;
     }
@@ -109,16 +109,16 @@ gemini_request(struct uri *uri)
         switch (tofu_status)
         {
         case TOFU_VERIFY_OK:
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_say("tofu: host fingerprints match");
             break;
         case TOFU_VERIFY_FAIL:
             // TODO: prompt user to decide whether to trust new certificate
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_say("tofu: fingerprint mismatch!");
             goto fail;
         case TOFU_VERIFY_NEW:
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_say("tofu: blindly trusting certificate "
                 "from unrecognised host");
             break;
@@ -143,7 +143,7 @@ gemini_request(struct uri *uri)
             sizeof(response_header))) <= 0 &&
         (ssl_error = SSL_get_error(gem->ssl, read_code)) != SSL_ERROR_NONE)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_printf("Error while reading response header data (error %d)",
             ssl_error);
         goto fail;
@@ -153,7 +153,7 @@ gemini_request(struct uri *uri)
     int response_header_len_mime = strcspn(response_header, "\r;");
     response_header[response_header_len_mime] = '\0';
     response_header[response_header_len] = '\0';
-    tui_cmd_status_prepare();
+    tui_status_prepare();
     tui_printf("Server responded: %s", response_header);
 
     // Interpret response code
@@ -194,7 +194,7 @@ gemini_request(struct uri *uri)
             g_recv->size = 0;
             if (response_code < 0)
             {
-                tui_cmd_status_prepare();
+                tui_status_prepare();
                 tui_printf("Error reading server response body");
                 goto fail;
             }
@@ -223,9 +223,9 @@ gemini_request(struct uri *uri)
             uri_abs(&g_state->uri, &redirect_uri);
 
             // Perform redirect
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_printf("Redirecting to %s", redirect_uri_str);
-            tui_go_to_uri(&redirect_uri, true);
+            tui_go_to_uri(&redirect_uri, true, false);
 
             break;
 

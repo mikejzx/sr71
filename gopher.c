@@ -28,7 +28,7 @@ gopher_request(struct uri *uri)
         goto fail;
     }
 
-    tui_cmd_status_prepare();
+    tui_status_prepare();
     tui_say("Successful connection");
 
     // Create the gopher request
@@ -38,7 +38,7 @@ gopher_request(struct uri *uri)
         "%s\r\n", uri->path);
     if (write(ph->sock, request, len) == -1)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_printf("Error while sending data to %s", uri->hostname);
         goto fail;
     }
@@ -56,7 +56,7 @@ gopher_request(struct uri *uri)
     g_recv->size = 0;
     if (response_code < 0)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_printf("Error reading server response body");
         goto fail;
     }

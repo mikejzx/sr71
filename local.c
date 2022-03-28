@@ -15,7 +15,7 @@ local_request(struct uri *uri, int *n_dirents)
     struct stat path_stat;
     if (stat(path, &path_stat) < 0)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_say("No such file or directory");
         return -1;
     }
@@ -29,12 +29,12 @@ local_request(struct uri *uri, int *n_dirents)
         FILE *file = fopen(path, "r");
         if (!file)
         {
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_say("Failed to open local file");
             return -1;
         }
 
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_printf("Loading local file %s", path);
 
         // Read size of file and resize buffer if needed
@@ -62,7 +62,7 @@ local_request(struct uri *uri, int *n_dirents)
         DIR *dir = opendir(path);
         if (!dir)
         {
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_say("failed to open directory");
             return -1;
         }

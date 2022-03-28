@@ -20,7 +20,7 @@ tofu_init(void)
     FILE *fp = fopen(TOFU_FILE_PATH, "r");
     if (!fp)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_say("error: failed to open TOFU database '" TOFU_FILE_PATH "'");
         return;
     }
@@ -62,7 +62,7 @@ tofu_deinit(void)
     FILE *fp = fopen(TOFU_FILE_PATH, "w");
     if (!fp)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_say("error: failed to open TOFU database '" TOFU_FILE_PATH "'");
         free(s_tofu.entries);
         return;

@@ -205,7 +205,7 @@ typeset_gemtext(
          * enormous files) if huge indent amounts or link/list prefixes, etc.
          * add up.
          */ \
-        tui_cmd_status_prepare(); \
+        tui_status_prepare(); \
         tui_printf("Aborting render (exceeded buffer size %.1f KiB).  FIXME", \
             b->size / 1024.0f); \
         return 0; \
@@ -219,6 +219,7 @@ typeset_gemtext(
         line->bytes = 0; \
         line->raw_index = raw_index; \
         line->raw_dist = 0; \
+        line->is_heading = false; \
     } while(0)
 #define LINE_FINISH() \
     do \
@@ -397,6 +398,8 @@ typeset_gemtext(
                     break;
                 }
             }
+
+            line->is_heading = true;
         }
 
         // Parse links
@@ -903,16 +906,6 @@ typeset_page(
 {
     // Bytes written by typesetter
     size_t n_bytes;
-
-    struct margin
-    {
-        int l, r;
-    } margin;
-    margin.l = 4;
-    margin.r = 8;
-
-    w -= margin.l;
-    w -= margin.r;
 
     if (mime_eqs(m, MIME_GEMTEXT))
     {

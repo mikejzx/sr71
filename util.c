@@ -172,7 +172,7 @@ connect_socket_to(const char *hostname, int port)
     char port_str[5];
     snprintf(port_str, sizeof(port_str), "%04d", port);
 
-    tui_cmd_status_prepare();
+    tui_status_prepare();
     tui_say("Looking up address ...");
 
     // Get host addresses
@@ -197,7 +197,7 @@ connect_socket_to(const char *hostname, int port)
             i->ai_addr->sa_family,
             SOCK_STREAM, 0)) < 0)
         {
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_say("error: failed to create socket");
             sock = 0;
             continue;
@@ -214,20 +214,20 @@ connect_socket_to(const char *hostname, int port)
             setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
             (char *)&timeout, sizeof(timeout)) < 0)
         {
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_say("error: failed to set socket timeout");
             sock = 0;
             continue;
         }
 
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_say("Connecting ...");
 
         // Connect socket
         if (connect(sock, (struct sockaddr *)i->ai_addr,
             i->ai_addrlen) < 0)
         {
-            tui_cmd_status_prepare();
+            tui_status_prepare();
             tui_printf("error: failed to connect to %s", hostname);
             sock = 0;
             continue;
@@ -238,7 +238,7 @@ connect_socket_to(const char *hostname, int port)
     }
     if (!connected)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         if (res == NULL)
         {
             tui_printf("error: no addresses for '%s'", hostname);

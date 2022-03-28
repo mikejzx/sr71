@@ -33,9 +33,8 @@ mem: all
 		./$(OUT)
 
 clean:
-	$(RM) $(OBJS)
-	$(RM) $(OUT)
-	$(RM) $(PCH)
+	$(RM) $(OBJS) $(DEPS) $(PCH_DEPS)
+	$(RM) $(OUT) $(PCH)
 
 # Link objs to executable
 $(OUT): $(OBJS)

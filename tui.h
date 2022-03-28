@@ -72,10 +72,13 @@ tui_print_size(int size)
 
 void tui_init(void);
 void tui_cleanup(void);
-int tui_update(void);
+int  tui_update(void);
 void tui_resized(void);
 void tui_repaint(bool);
-void tui_cmd_status_prepare(void);
-void tui_go_to_uri(const struct uri *const, bool);
+void tui_invalidate(void);
+void tui_status_prepare(void);
+void tui_status_clear(void);
+void tui_go_to_uri(const struct uri *const, bool, bool);
+void tui_go_from_input(void);
 
 #endif

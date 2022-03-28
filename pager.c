@@ -3,9 +3,20 @@
 #include "state.h"
 #include "typesetter.h"
 
+static const int CONTENT_WIDTH_PREFERRED = 70;
+
 struct pager_state *g_pager;
 
 static void pager_alloc_visible_buffer(struct pager_visible_buffer *, int);
+
+static void
+pager_recalc_margin(void)
+{
+    int marg = g_pager->visible_buffer.w - CONTENT_WIDTH_PREFERRED;
+    g_pager->margin_bias = 0.5f;
+    g_pager->margin.l = max(0, marg * g_pager->margin_bias);
+    g_pager->margin.r = max(0, marg * (1.0f - g_pager->margin_bias));
+}
 
 void
 pager_init(void)
@@ -29,13 +40,15 @@ pager_update_page(int selected, int scroll)
     g_pager->selected_link_index = selected;
     g_pager->scroll = scroll;
 
+    pager_recalc_margin();
+
     // Copy page data into the typesetter
     typesetter_reinit(&g_pager->typeset);
 
     // Typeset the content
     bool typeset = typeset_page(&g_pager->typeset,
         &g_pager->buffer,
-        min(g_pager->visible_buffer.w, 70),
+        g_pager->visible_buffer.w - g_pager->margin.l - g_pager->margin.r,
         &g_recv->mime);
 
     // Refresh the TUI
@@ -43,7 +56,7 @@ pager_update_page(int selected, int scroll)
 
     if (!typeset)
     {
-        tui_cmd_status_prepare();
+        tui_status_prepare();
         tui_printf("no mailcap entry for '%s'", g_recv->mime.str);
 
         // TODO open file with mailcap entry?
@@ -87,10 +100,12 @@ pager_resized(void)
         scroll_raw_dist = g_pager->buffer.lines[g_pager->scroll].raw_dist;
     }
 
+    pager_recalc_margin();
+
     // Re-typeset the content, to update word-wrapping, etc.
     typeset_page(&g_pager->typeset,
         &g_pager->buffer,
-        min(g_pager->visible_buffer.w, 70),
+        g_pager->visible_buffer.w - g_pager->margin.l - g_pager->margin.r,
         &g_recv->mime);
 
     // Now we need to restore the scroll position by finding the line that has
@@ -155,6 +170,44 @@ pager_scroll_bottom(void)
     g_pager->scroll = g_pager->buffer.line_count - g_pager->visible_buffer.h;
 }
 
+/* Scroll to next paragraph (dir is -1 or 1) */
+void
+pager_scroll_paragraph(int dir)
+{
+    int i;
+
+    // Scroll to next non-empty line (beginning of paragraph)
+    for (i = g_pager->scroll;
+        i >= 0 &&
+            i < g_pager->buffer.line_count &&
+            !g_pager->buffer.lines[i].bytes;
+        i += dir);
+
+    // Scroll to next empty line (end of paragraph)
+    for (;
+        i >= 0 &&
+            i < g_pager->buffer.line_count &&
+            g_pager->buffer.lines[i].bytes;
+        i += dir);
+
+    g_pager->scroll = min(max(i, 0), g_pager->buffer.line_count - 1);
+}
+
+/* Scroll to next heading (dir is -1 or 1) */
+void pager_scroll_heading(int dir)
+{
+    for (int i = g_pager->scroll + dir;
+        i >= 0 && i < g_pager->buffer.line_count;
+        i += dir)
+    {
+        if (g_pager->buffer.lines[i].is_heading)
+        {
+            g_pager->scroll = max(min(i, g_pager->buffer.line_count - 1), 0);
+            return;
+        }
+    }
+}
+
 /* Re-paint the entire pager */
 void
 pager_paint(void)
@@ -177,12 +230,15 @@ pager_paint(void)
         // Move cursor to correct place
         tui_cursor_move(0, i + 1);
 
+        // Fill left margin
+        tui_printf("%*s", g_pager->margin.l, "");
+
         struct pager_buffer_line *const line = &g_pager->visible_buffer.rows[i];
 
         int clear_count = (int)g_pager->visible_buffer_prev.rows[i].len;
         tui_printf("%*s", clear_count, "");
 
-        tui_cursor_move(0, i + 1);
+        tui_cursor_move(g_pager->margin.l, i + 1);
 
         // Draw the line
         bool highlighted = false;

@@ -83,4 +83,13 @@ size_t uri_str(struct uri *restrict, char *restrict,
     size_t, enum uri_string_flags);
 void uri_abs(struct uri *restrict, struct uri *restrict);
 
+static inline int
+uri_cmp(struct uri *a, struct uri *b)
+{
+    return (
+        strncmp(a->hostname, b->hostname, URI_HOSTNAME_MAX) == 0 &&
+        strncmp(a->path, b->path, URI_PATH_MAX) == 0 &&
+        a->protocol == b->protocol) ? 0 : -1;
+}
+
 #endif

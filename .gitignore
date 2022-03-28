@@ -6,3 +6,5 @@ patches/*
 *.gch
 TODO
 trusted_hosts
+cache/*
+cache

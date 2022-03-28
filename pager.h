@@ -25,6 +25,11 @@ struct pager_buffer_line
     // And additionally the number of bytes this line is from the beginning of
     // the raw line
     size_t raw_dist;
+
+    // Whether this line is a heading
+    // NOTE: if we have any more bools like this in future this should become
+    // a bitfield enum
+    bool is_heading;
 };
 
 struct pager_buffer
@@ -75,6 +80,13 @@ struct pager_state
     size_t link_count;
     size_t link_capacity;
     int selected_link_index;
+
+    // Pager margins
+    struct margin
+    {
+        int l, r;
+    } margin;
+    float margin_bias;
 };
 
 extern struct pager_state *g_pager;
@@ -84,6 +96,8 @@ void pager_load_buffer(struct pager_buffer *);
 void pager_scroll(int);
 void pager_scroll_top(void);
 void pager_scroll_bottom(void);
+void pager_scroll_paragraph(int);
+void pager_scroll_heading(int);
 void pager_paint(void);
 void pager_resized(void);
 void pager_update_page(int, int);
