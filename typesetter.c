@@ -301,6 +301,7 @@ typeset_gemtext(
     // Iterate over each of the raw lines in the buffer
     struct pager_buffer_line *line = b->lines;
     const char *const buffer_end_pos = b->b + b->size;
+    const char *rawline_end;
     bool line_started = false;
     for (raw_index = 0;
         raw_index < t->raw_line_count;
@@ -318,6 +319,7 @@ typeset_gemtext(
         gemtext.esc_len = 0;
         *gemtext.prefix = 0;
         gemtext.prefix_len = 0;
+        rawline_end = rawline->s + rawline->bytes;
 
         // Start a new line
         LINE_START();
@@ -347,7 +349,7 @@ typeset_gemtext(
         // Check for headings
         int heading_level = 0;
         for (const char *x = rawline->s;
-            x < (rawline->s + rawline->bytes) && *x == '#';
+            x < rawline_end && *x == '#';
             ++heading_level, ++x);
         switch(heading_level)
         {
@@ -386,7 +388,7 @@ typeset_gemtext(
             // This makes e.g. documents with numbered sections look really
             // nice
             for (const char *i = rawline->s + heading_level + 1;
-                i < rawline->s + rawline->bytes && *i;
+                i < rawline_end && *i;
                 ++i)
             {
                 if (*i == '\n' ||
@@ -428,7 +430,7 @@ typeset_gemtext(
             const char *l_title;
             bool has_title = false;
             for (const char *i = l_uri;
-                i < rawline->s + rawline->bytes && *i;
+                i < rawline_end && *i;
                 ++i)
             {
                 if (*i == ' ' || *i == '\t')
@@ -499,6 +501,7 @@ typeset_gemtext(
             // Alternative alphabetic list index, so you don't need to reach up
             // to the number row to select links
             //LINE_PRINTF(" [%c] ", 'a' + (int)l_index);
+            goto wrap;
         }
 
         // Parse lists
@@ -547,6 +550,7 @@ typeset_gemtext(
             gemtext.indent = 2;
         }
 
+    wrap: ;
         // Margins are accounted for in "width total" here
         int width = width_total - gemtext.indent;
 
@@ -558,7 +562,7 @@ typeset_gemtext(
         int chars_this_column =
             utf8_strnlen_w_formats(line->s, buffer_pos - line->s);
         for (const char *c = c_prev;
-            c <= rawline->s + rawline->bytes;
+            c <= rawline_end;
             ++c)
         {
             // Set the most recent escape code to print at beginning of next line
@@ -567,7 +571,7 @@ typeset_gemtext(
                 const char *esc_start = c;
 
                 // Get length of escape
-                for (; c <= rawline->s + rawline->bytes; ++c)
+                for (; c <= rawline_end; ++c)
                 {
                     if (*c == 'm')
                     {
@@ -578,7 +582,7 @@ typeset_gemtext(
                     }
 
                     if (!*c ||
-                        c >= rawline->s + rawline->bytes ||
+                        c >= rawline_end ||
                         *c == ' ' ||
                         *c == '\n')
                     {
@@ -590,7 +594,7 @@ typeset_gemtext(
 
             // Found a space or we are at end of line
             if (*c == ' ' ||
-                c == rawline->s + rawline->bytes)
+                c == rawline_end)
             {
                 while (chars_this_column + c - c_prev > width)
                 {
@@ -790,6 +794,7 @@ typeset_gophermap(
     // Iterate over each of the raw lines in the buffer
     struct pager_buffer_line *line = b->lines;
     const char *const buffer_end_pos = b->b + b->size;
+    const char *rawline_end;
     for (int raw_index = 0;
         raw_index < t->raw_line_count;
         ++raw_index)
@@ -798,24 +803,30 @@ typeset_gophermap(
         const struct pager_buffer_line *const
             rawline = &t->raw_lines[raw_index];
 
+        if (rawline->bytes < 1) continue;
+
         line->s = buffer_pos;
         line->bytes = 0;
         line->raw_index = raw_index;
         line->raw_dist = 0;
+        rawline_end = rawline->s + rawline->bytes;
 
         // Write display string to the buffer
         const char *item_display = rawline->s + 1;
         const size_t item_display_len = strcspn(item_display, "\t");
+        if (item_display + item_display_len >= rawline_end) continue;
 
         // Get item path
         const char *item_path = item_display + item_display_len + 1;
         const size_t item_path_len = strcspn(item_path, "\t");
+        if (item_path + item_path_len >= rawline_end) continue;
         strncpy(uri.path, item_path, min(item_path_len, URI_PATH_MAX));
         uri.path[item_path_len] = '\0';
 
         // Get item hostname
         const char *item_hostname = item_path + item_path_len + 1;
         const size_t item_hostname_len = strcspn(item_hostname, "\t");
+        if (item_hostname + item_hostname_len + 1 >= rawline_end) continue;
         strncpy(uri.hostname, item_hostname,
             min(item_hostname_len, URI_HOSTNAME_MAX));
         uri.hostname[item_hostname_len] = '\0';
@@ -839,30 +850,35 @@ typeset_gophermap(
 
         // Document
         case 'd':
+            uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d document] ", (int)l_index);
+            LINE_PRINTF(" [%d doc] ", (int)l_index);
             break;
 
         // HTML file
         case 'h':
+            uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
             LINE_PRINTF(" [%d html] ", (int)l_index);
             break;
 
         // Sound file
         case 's':
+            uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d sound] ", (int)l_index);
+            LINE_PRINTF(" [%d snd] ", (int)l_index);
             break;
 
         // File (usually text)
         case '0':
+            uri.gopher_item = GOPHER_ITEM_TEXT;
             ADD_LINK();
-            LINE_PRINTF(" [%d text] ", (int)l_index);
+            LINE_PRINTF(" [%d txt] ", (int)l_index);
             break;
 
         // Directory
         case '1':
+            uri.gopher_item = GOPHER_ITEM_DIR;
             ADD_LINK();
             LINE_PRINTF(" [%d dir] ", (int)l_index);
             break;
@@ -871,12 +887,14 @@ typeset_gophermap(
         case '9':
         case 'I':
         case '2':
+            uri.gopher_item = GOPHER_ITEM_BIN;
             ADD_LINK();
-            LINE_PRINTF(" [%d binary] ", (int)l_index);
+            LINE_PRINTF(" [%d bin] ", (int)l_index);
             break;
 
         // Unknown/unsupported item type
         default:
+            uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
             LINE_PRINTF(" [%d unsupported] ", (int)l_index);
             break;

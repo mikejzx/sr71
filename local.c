@@ -5,7 +5,9 @@
 #include "tui.h"
 
 int
-local_request(struct uri *uri, int *n_dirents)
+local_request(
+    const struct uri *restrict uri,
+    int *restrict n_dirents)
 {
     // Get file path
     static char path[FILENAME_MAX];

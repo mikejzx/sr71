@@ -36,7 +36,7 @@
 // Indicate that we want to build with persistent disk caching enabled
 //#define CACHE_USE_DISK
 
-#define CACHE_ITEM_CAPACITY_INITIAL 128
+#define CACHE_ITEM_CAPACITY_INITIAL (128)
 
 // Allow 128 MiB of in-memory cache
 #define CACHE_IN_MEM_MAX_SIZE (1024 * 1024 * 128)
@@ -76,6 +76,6 @@ struct cache
 int cache_init(void);
 void cache_deinit(void);
 void cache_push_current(void);
-bool cache_find(struct uri *);
+bool cache_find(const struct uri *const);
 
 #endif

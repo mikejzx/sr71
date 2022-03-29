@@ -1,6 +1,7 @@
 #ifndef PAGER_H
 #define PAGER_H
 
+#include "gopher.h"
 #include "typesetter.h"
 #include "uri.h"
 
@@ -79,7 +80,7 @@ struct pager_state
     struct pager_link *links;
     size_t link_count;
     size_t link_capacity;
-    int selected_link_index;
+    int selected_link_index, selected_link_index_prev;
 
     // Pager margins
     struct margin
@@ -103,7 +104,7 @@ void pager_scroll_top(void);
 void pager_scroll_bottom(void);
 void pager_scroll_paragraph(int);
 void pager_scroll_heading(int);
-void pager_paint(void);
+void pager_paint(bool);
 void pager_resized(void);
 void pager_update_page(int, int);
 void pager_select_first_link_visible(void);

@@ -213,10 +213,20 @@ void pager_scroll_heading(int dir)
     }
 }
 
-/* Re-paint the entire pager */
+/*
+ * Re-paint the entire pager
+ * Pass false to 'full' to only paint a subset (at the moment just paints
+ * selected link if it changed)
+ */
 void
-pager_paint(void)
+pager_paint(bool full)
 {
+    bool updating_links =
+        g_pager->selected_link_index_prev != g_pager->selected_link_index;
+
+    // Partial updates only run if selected link changed
+    if (!full && !updating_links) return;
+
     // Draw the visible buffer
     for (int i = 0; i < g_pager->visible_buffer.h; ++i)
     {
@@ -232,30 +242,43 @@ pager_paint(void)
                 (struct pager_buffer_line) { NULL, 0, 0 };
         }
 
-        // Move cursor to correct place
-        tui_cursor_move(0, i + 1);
-
-        // Fill the left margin with space
-        tui_printf("%*s", g_pager->margin.l, "");
-
         struct pager_buffer_line *const line = &g_pager->visible_buffer.rows[i];
 
         // Draw the line
         bool highlighted = false;
+        bool moved = false;
+        bool will_print;
         if (i < g_pager->buffer.line_count - g_pager->scroll)
         {
-            // Clamp line to end of visible buffer (this obviously doesn't wrap
-            // the line)
-            //line->len = min(g_pager->visible_buffer.w, line->len);
-            //line->bytes = utf8_size_w_formats(line->s, line->len);
+            will_print = full;
 
             // Line highlighting
             for (int l = 0; l < g_pager->link_count; ++l)
             {
+                // If we are doing a partial refresh, of just links, then we
+                // need to only update the link that was selected and the one
+                // that was deselected
+                if (!full &&
+                    updating_links &&
+                    l != g_pager->selected_link_index &&
+                    l != g_pager->selected_link_index_prev)
+                {
+                    continue;
+                }
+
                 struct pager_link *link = &g_pager->links[l];
                 if (line->s >= link->buffer_loc &&
                     line->s < link->buffer_loc + link->buffer_loc_len)
                 {
+                    // Move cursor to correct place and fill margin
+                    if (!moved)
+                    {
+                        tui_cursor_move(0, i + 1);
+                        tui_printf("%*s", g_pager->margin.l, "");
+                        moved = true;
+                    }
+                    will_print = true;
+
                     if (l == g_pager->selected_link_index)
                     {
                         tui_say("\x1b[35m");
@@ -269,15 +292,35 @@ pager_paint(void)
                 }
             }
 
+            // Don't print anything
+            if (!will_print) continue;
+
+            // Move cursor to correct place and fill margin
+            if (!moved)
+            {
+                tui_cursor_move(0, i + 1);
+                tui_printf("%*s", g_pager->margin.l, "");
+                moved = true;
+            }
+
             tui_sayn(line->s, line->bytes);
 
             if (highlighted)
             {
                 tui_say("\x1b[0m");
             }
+
+            // Don't clear if not full
+            if (!full) continue;
         }
         else
         {
+            if (!full) continue;
+
+            // Move cursor to correct place and fill margin
+            tui_cursor_move(0, i + 1);
+            tui_printf("%*s", g_pager->margin.l, "");
+
         #define CLEAR_VI_STYLE
         #ifdef CLEAR_VI_STYLE
             // Because vi
@@ -304,6 +347,7 @@ pager_paint(void)
     struct pager_buffer_line *tmp = g_pager->visible_buffer.rows;
     g_pager->visible_buffer.rows = g_pager->visible_buffer_prev.rows;
     g_pager->visible_buffer_prev.rows = tmp;
+    g_pager->selected_link_index_prev = g_pager->selected_link_index;
 }
 
 static void

@@ -121,23 +121,31 @@ tui_repaint(bool clear)
 
     if (clear) tui_say("\x1b[2J");
 
-    pager_paint();
+    pager_paint(true);
     status_line_paint();
 }
 
 void
-tui_invalidate(void)
+tui_invalidate(enum tui_invalidate_flags flags)
 {
+    if (!flags) return;
+
     int cursor_x_prev = g_tui->cursor_x,
         cursor_y_prev = g_tui->cursor_y;
 
-    pager_paint();
+    if (flags & (INVALIDATE_PAGER_SELECTED_BIT | INVALIDATE_PAGER_BIT))
+    {
+        pager_paint(flags & INVALIDATE_PAGER_BIT);
+    }
 
-    g_statline.components[STATUS_LINE_COMPONENT_RIGHT].invalidated
-        = true;
-    status_line_paint();
+    if (flags & INVALIDATE_STATUS_LINE_BIT)
+    {
+        g_statline.components[STATUS_LINE_COMPONENT_RIGHT].invalidated
+            = true;
+        status_line_paint();
+    }
 
-    // This stops cursor flying off when in link mode
+    // This stops cursor flying off all over the place when in link mode
     tui_cursor_move(cursor_x_prev, cursor_y_prev);
 }
 
@@ -194,11 +202,6 @@ tui_go_to_uri(
         return -1;
     }
 
-    // Show status message
-    tui_status_begin();
-    tui_printf("Loading %s ...", g_tui->input);
-    tui_status_end();
-
     int success;
     bool do_cache = false;
 
@@ -207,9 +210,17 @@ tui_go_to_uri(
     {
     case PROTOCOL_GEMINI:
     case PROTOCOL_GOPHER:
-        success = uri.protocol == PROTOCOL_GEMINI
-            ? gemini_request(&uri)
-            : gopher_request(&uri);
+        bool from_cache = !force_nocache && cache_find(uri_in);
+        if (!from_cache)
+        {
+            success = uri.protocol == PROTOCOL_GEMINI
+                ? gemini_request(&uri)
+                : gopher_request(&uri);
+        }
+        else
+        {
+            success = 0;
+        }
 
         if (success == 0)
         {
@@ -218,14 +229,14 @@ tui_go_to_uri(
             tui_print_size(g_recv->size);
             tui_status_end();
 
-            if (!force_nocache) do_cache = true;
+            do_cache = !from_cache;
         }
         break;
 
-    case PROTOCOL_FILE:
+    case PROTOCOL_FILE: ;
         // Local file/directory; try to read it.
         int is_dir;
-        success = local_request(&uri, &is_dir);
+        success = local_request(uri_in, &is_dir);
 
         if (success == 0)
         {
@@ -269,13 +280,11 @@ tui_go_to_uri(
             scroll = g_hist->ptr->last_scroll;
         }
 
+        // Push the page to the cache
+        if (do_cache) { cache_push_current(); }
+
         // Update the pager
         pager_update_page(sel, scroll);
-
-        if (do_cache)
-        {
-            cache_push_current();
-        }
     }
     return success;
 }

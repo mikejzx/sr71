@@ -4,7 +4,7 @@
 #include "tui.h"
 #include "uri.h"
 
-static bool s_invalidate = false;
+static enum tui_invalidate_flags s_invalidate;
 static enum tui_mode_id s_next_mode = TUI_MODE_UNKNOWN;
 
 static int tui_handle_mode_normal(char);
@@ -22,6 +22,7 @@ int
 tui_handle_input(char buf)
 {
     static int result;
+    s_invalidate = INVALIDATE_NONE;
 
     // Marks are handled a bit strangely for the moment; they're seperate from
     // the main state machine.  The input code needs to be re worked quite a bit
@@ -51,7 +52,8 @@ tui_handle_input(char buf)
             break;
         case SMODE_MARK_FOLLOW:
             g_pager->scroll = g_pager->marks[index];
-            tui_invalidate();
+            tui_invalidate(
+                INVALIDATE_PAGER_BIT | INVALIDATE_STATUS_LINE_BIT);
             break;
         default: break;
         }
@@ -95,7 +97,7 @@ tui_handle_input(char buf)
     if (result < 0) return result;
 
     // Repaint the TUI
-    if (s_invalidate) tui_invalidate();
+    if (s_invalidate) tui_invalidate(s_invalidate);
 
     // Transition to next mode
     if (!s_next_mode) return 0;
@@ -157,56 +159,56 @@ tui_handle_common_movement(char buf)
     case 'j':
     case ('E' ^ 0100):
         pager_scroll(1);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case 'k':
     case ('Y' ^ 0100):
         pager_scroll(-1);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case 'd':
     case ('D' ^ 0100):
         pager_scroll(g_tui->h / 2);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case 'u':
     case ('U' ^ 0100):
         pager_scroll(g_tui->h / -2);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case ('F' ^ 0100):
         pager_scroll(g_tui->h);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case ('B' ^ 0100):
         pager_scroll(-g_tui->h);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case 'g':
         pager_scroll_top();
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case 'G':
         pager_scroll_bottom();
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
 
     // Paragraph/heading movement
     case '{':
         pager_scroll_paragraph(-1);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case '}':
         pager_scroll_paragraph(1);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case '[':
         pager_scroll_heading(-1);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
     case ']':
         pager_scroll_heading(1);
-        s_invalidate = true;
+        s_invalidate = INVALIDATE_ALL;
         return true;
 
     // Mark handling (m to set, ' to follow)
@@ -235,6 +237,7 @@ tui_handle_mode_normal(char buf)
     case '\x1b':
         // Deselect selected link
         g_pager->selected_link_index = -1;
+        s_invalidate = INVALIDATE_PAGER_SELECTED_BIT;
         break;
 
     // 'o': open page.
@@ -722,10 +725,11 @@ update_link_peek:
             tui_cursor_move(x_pos + 1, g_tui->h);
             tui_printf(" (%.*s)", (int)uri_name_len, uri_name);
         }
-        s_invalidate = true;
     }
     tui_cursor_move(x_pos + 1, g_tui->h);
     tui_status_end();
+
+    s_invalidate = INVALIDATE_PAGER_SELECTED_BIT;
 
     return 0;
 }

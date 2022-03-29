@@ -29,6 +29,21 @@ enum tui_mode_id
     TUI_MODE_LINKS,
 };
 
+enum tui_invalidate_flags
+{
+    INVALIDATE_ALL = -1,
+    INVALIDATE_NONE = 0,
+
+    // Refresh the entire pager
+    INVALIDATE_PAGER_BIT = 1,
+
+    // Only refresh selected links in the pager (partial update)
+    INVALIDATE_PAGER_SELECTED_BIT = 2,
+
+    // Refresh the status line
+    INVALIDATE_STATUS_LINE_BIT = 4,
+};
+
 // Max number of characters allowed in the input prompt
 #define TUI_INPUT_BUFFER_MAX 256
 #define TUI_INPUT_PROMPT_MAX 32
@@ -58,7 +73,7 @@ void tui_cleanup(void);
 int  tui_update(void);
 void tui_resized(void);
 void tui_repaint(bool);
-void tui_invalidate(void);
+void tui_invalidate(enum tui_invalidate_flags);
 int tui_go_to_uri(const struct uri *const, bool, bool);
 void tui_go_from_input(void);
 

@@ -122,7 +122,7 @@ cache_deinit(void)
 
 /* Find a URI in the cache */
 bool
-cache_find(struct uri *uri)
+cache_find(const struct uri *const uri)
 {
     // See if we have the URI cached in memory already
     for (int i = 0; i < s_cache.count; ++i)

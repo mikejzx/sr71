@@ -63,8 +63,22 @@ gopher_request(struct uri *uri)
     }
     g_recv->size = recv_bytes;
 
-    // Update MIME; for now everything is plaintext
-    mime_parse(&g_recv->mime, MIME_GOPHERMAP, strlen(MIME_GOPHERMAP) + 1);
+    // Update MIME; for now everything is gophermap
+    //mime_parse(&g_recv->mime, MIME_GOPHERMAP, strlen(MIME_GOPHERMAP) + 1);
+    switch (uri->gopher_item)
+    {
+    default:
+    case GOPHER_ITEM_UNSUPPORTED:
+        // Unknown MIME
+        // TODO mailcap
+    case GOPHER_ITEM_TEXT:
+    case GOPHER_ITEM_BIN:
+        mime_parse(&g_recv->mime, MIME_PLAINTEXT, strlen(MIME_PLAINTEXT) + 1);
+        break;
+    case GOPHER_ITEM_DIR:
+        mime_parse(&g_recv->mime, MIME_GOPHERMAP, strlen(MIME_GOPHERMAP) + 1);
+        break;
+    }
 
 fail:
     close(ph->sock);

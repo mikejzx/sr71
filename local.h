@@ -4,6 +4,6 @@
 struct uri;
 
 // Make a file:// request to local filesystem
-int local_request(struct uri *, int *);
+int local_request(const struct uri *restrict const, int *restrict);
 
 #endif

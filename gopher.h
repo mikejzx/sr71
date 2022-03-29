@@ -3,6 +3,14 @@
 
 struct uri;
 
+enum gopher_item_type
+{
+    GOPHER_ITEM_UNSUPPORTED = -1,
+    GOPHER_ITEM_DIR = 0,
+    GOPHER_ITEM_TEXT,
+    GOPHER_ITEM_BIN,
+};
+
 /*
  * gopher.h
  *

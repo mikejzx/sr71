@@ -1,9 +1,10 @@
 #include "pch.h"
+#include "cache.h"
 #include "sighandle.h"
 #include "state.h"
 #include "status_line.h"
-#include "tui.h"
 #include "tofu.h"
+#include "tui.h"
 
 struct state *g_state;
 struct recv_buffer *g_recv;
@@ -31,6 +32,7 @@ main(int argc, char **argv)
 
     gemini_init();
     tofu_init();
+    cache_init();
 
     enum cmd_arg_mode
     {
@@ -201,6 +203,7 @@ program_exited(void)
     if (exited) return;
     exited = true;
 
+    cache_deinit();
     tofu_deinit();
 
     gemini_deinit();

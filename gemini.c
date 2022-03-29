@@ -158,7 +158,7 @@ gemini_request(struct uri *uri)
     switch(response_header[0])
     {
         // Success code
-        case '2':
+        case '2': ;
             char chunk[512];
             size_t recv_bytes = 0;
 
@@ -201,7 +201,7 @@ gemini_request(struct uri *uri)
             break;
 
         // Redirect code
-        case '3':
+        case '3': ;
             // Get URI (position in response header is fixed)
             const char *redirect_uri_str = response_header + strlen("XX ");
             struct uri redirect_uri = uri_parse(

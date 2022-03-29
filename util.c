@@ -19,7 +19,6 @@ path_normalise(
     const char *rel_old = rel;
     for (; *rel && *rel == '/'; ++rel);
 
-    size_t section_size = 0;
     const char *c_last;
 
     // Parse both the paths
@@ -44,41 +43,47 @@ path_normalise(
             bool is_section = (c - c_last > 0 && *c == '/') || *c == '\0';
             if (!is_section) continue;
 
-            // Remove '/./'s as these are redundant
+            // Navigate up directory via '..'
             if (*c &&
-                strncmp(c_last, ".", c - c_last) == 0)
+                c - c_last >= strlen("..") &&
+                strncmp(c_last, "..", c - c_last) == 0)
             {
-                // Skip past section
-                for (c_last = c; *c_last == '/'; ++c_last);
+                // Remove the last section/directory from URI.
+                for (; o_size > 1 && o[o_size - 1] == '/'; --o_size);
+                for (; o_size > 1 && o[o_size - 1] != '/'; --o_size);
+                for (c_last = c; *c_last && *c_last == '/'; ++c_last);
                 continue;
             }
 
-            // Navigate up directory via '..'
+            // Remove '/./'s as these are redundant
             if (*c &&
-                strncmp(c_last, "..", c - c_last) == 0)
+                c - c_last >= strlen(".") &&
+                strncmp(c_last, ".", c - c_last) == 0)
             {
-                // Remove the last section/directory from URI
-                o_size = max(o_size - section_size, 1);
-                for (c_last = c; *c_last == '/'; ++c_last);
+                // Skip past section
+                for (c_last = c; *c_last && *c_last == '/'; ++c_last);
                 continue;
             }
 
             // Copy the path section
-            section_size = c - c_last;
-            strncpy(o + o_size, c_last, section_size);
-            o_size += section_size;
-
-            // Set the last point, skipping over slashes
-            for (c_last = c; *c_last == '/'; ++c_last);
+            if (c - c_last > 0)
+            {
+                ssize_t section_size = max(c - c_last, 0);
+                strncpy(o + o_size, c_last, section_size);
+                o_size += section_size;
+            }
 
             // Add a separator, except at end of the relative string
             if (!(*path == rel && *c == '\0') &&
-                section_size > 0)
+                c - c_last > 0)
             {
                 strcpy(o + o_size, "/");
                 ++o_size;
-                ++section_size;
+                for (c_last = c; *c_last && *c_last == '/'; ++c_last);
             }
+
+            // Set the last point, skipping over slashes
+            for (c_last = c; *c_last && *c_last == '/'; ++c_last);
 
             if (*c == '\0') break;
         }

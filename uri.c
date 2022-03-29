@@ -89,7 +89,7 @@ uri_parse(const char *uri, size_t uri_len)
 /* Convert URI to string (returns size of result) */
 size_t
 uri_str(
-    struct uri *restrict uri,
+    const struct uri *restrict const uri,
     char *restrict buf,
     size_t buf_size,
     enum uri_string_flags flags)
@@ -120,36 +120,48 @@ uri_str(
         strcat(scheme, "://");
     }
 
+    const char *fmt;
     if (!uri->port ||
         flags & URI_FLAGS_NO_PORT_BIT)
     {
-        const char *fmt = "%s" // Scheme
-            "%s"               // Hostname
-            "%s%s";            // Path
+        fmt = "%s" // Scheme
+            "%s"   // Hostname
+            "%s";  // Path
         if (flags & URI_FLAGS_FANCY_BIT)
         {
-            // Print some escapes with it
+            // Fancy mode escapes
             fmt = "\x1b[2m%s\x1b[0m"
                 "%s"
-                "\x1b[2m%s%s\x1b[0m";
+                "\x1b[2m%s\x1b[0m";
         }
 
         // Print without port
         return snprintf(buf, buf_size, fmt,
             scheme,
             uri->hostname,
-            (*uri->path != '/' && *uri->path != '\0') ? "/" : "",
             uri->path);
     }
     else
     {
+        fmt = "%s" // Scheme
+            "%s"   // Hostname
+            ":%d"  // Port
+            "%s";  // Path
+        if (flags & URI_FLAGS_FANCY_BIT)
+        {
+            // Fancy mode escapes
+            fmt = "\x1b[2m%s\x1b[0m"
+                "%s"
+                ":%d"
+                "\x1b[2m%s\x1b[0m";
+        }
+
         // Print with port
         return snprintf(buf, buf_size,
-            "%s%s:%d%s%s",
+            fmt,
             scheme,
             uri->hostname,
             uri->port,
-            (*uri->path != '/' && *uri->path != '\0') ? "/" : "",
             uri->path);
     }
 }

@@ -85,10 +85,14 @@ status_line_paint(void)
         tui_say("\x1b[0m");
 
         // Clear previous text
+        int clear = (int)(c->len_prev - c->len);
+        if (clear <= 0) continue;
         if (cid == STATUS_LINE_COMPONENT_RIGHT)
         {
-            tui_cursor_move(g_tui->w - (int)c->len_prev + 1, g_tui->h - 1);
+            tui_cursor_move(
+                max(g_tui->w - (int)c->len_prev + 1, 0),
+                g_tui->h - 1);
         }
-        tui_printf("%*s", (int)(c->len_prev - c->len), "");
+        tui_printf("%*s", clear, "");
     }
 }

@@ -1,6 +1,8 @@
 #ifndef URI_H
 #define URI_H
 
+#include "gopher.h"
+
 #define URI_HOSTNAME_MAX 256
 #define URI_PATH_MAX 512
 #define PROTOCOL_NAME_MAX 16
@@ -76,15 +78,26 @@ struct uri
     char hostname[URI_HOSTNAME_MAX];
     int port;
     char path[URI_PATH_MAX];
+
+    // Gopher item type.  It's very convenient to store this here and keeps
+    // stuff a bit cleaner
+    enum gopher_item_type gopher_item;
 };
 
 struct uri uri_parse(const char *, size_t);
-size_t uri_str(struct uri *restrict, char *restrict,
-    size_t, enum uri_string_flags);
+
+size_t uri_str(
+    const struct uri *restrict const,
+    char *restrict,
+    size_t,
+    enum uri_string_flags);
+
 void uri_abs(struct uri *restrict, struct uri *restrict);
 
 static inline int
-uri_cmp(struct uri *a, struct uri *b)
+uri_cmp(
+    const struct uri *restrict const a,
+    const struct uri *restrict const b)
 {
     return (
         strncmp(a->hostname, b->hostname, URI_HOSTNAME_MAX) == 0 &&
