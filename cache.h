@@ -43,7 +43,7 @@
 //#define CACHE_IN_MEM_MAX_SIZE (4096 * 32)
 
 // Maximum age of a cached resource (seconds) before fetching latest version
-#define CACHE_MAX_AGE (60 * 60 * 24)
+//#define CACHE_MAX_AGE (60 * 60 * 24)
 
 // Represents and in-memory cached item
 struct cached_item

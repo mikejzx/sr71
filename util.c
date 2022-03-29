@@ -8,82 +8,83 @@ path_normalise(
     const char *restrict rel,
     char *restrict o)
 {
-    if (*base == '\0')
-    {
-        o[0] = '\0';
-        return 0;
-    }
-
     int o_size = 0;
 
-    // Always start the result with a slash
-    if (*base != '/')
+    // Make sure the result begins with a slash
+    o[o_size++] = '/';
+
+    // Start the paths after their trailing slash if they have any any (we
+    // insert them ourselves)
+    for (; *base && *base == '/'; ++base);
+    const char *rel_old = rel;
+    for (; *rel && *rel == '/'; ++rel);
+
+    size_t section_size = 0;
+    const char *c_last;
+
+    // Parse both the paths
+    const char *paths[] = { base, rel, 0 };
+    const char **path = paths;
+
+    if (rel != rel_old)
     {
-        o[o_size++] = '/';
+        // If the second URI begins with a slash, then we need to completely
+        // skip the base URI (the name is misleading, as the "relative" URI is
+        // technically now an "absolute" one, but whatever... let's just be
+        // glad it works)
+        ++path;
     }
 
-    bool parsed_rel = false;
-    const char *c_last = base;
-    size_t last_section_size = 0;
-    for (const char *c = base;; ++c)
+    for (; *path != NULL; ++path)
     {
-        // Add each section one-by-one
-        if ((*c == '/' || *c == '\0') &&
-            (c - c_last) > 0)
+        c_last = *path;
+        for (const char *c = *path;; ++c)
         {
-            // Redundant '/./' removal
-            if (strncmp(c_last, ".", c - c_last) == 0)
+            // We add each section one-by-one.
+            bool is_section = (c - c_last > 0 && *c == '/') || *c == '\0';
+            if (!is_section) continue;
+
+            // Remove '/./'s as these are redundant
+            if (*c &&
+                strncmp(c_last, ".", c - c_last) == 0)
             {
-                // Detected a '.', just remove this section as it's reduntant
+                // Skip past section
                 for (c_last = c; *c_last == '/'; ++c_last);
                 continue;
             }
 
-            // '..' to navigate up a director
-            if (strncmp(c_last, "..", c - c_last) == 0)
+            // Navigate up directory via '..'
+            if (*c &&
+                strncmp(c_last, "..", c - c_last) == 0)
             {
-                // Remove the last section/directory from the URI
-                // (min'd with 1 to ensure that leading slash is preserved)
-                o_size = max(o_size - last_section_size, 1);
-
+                // Remove the last section/directory from URI
+                o_size = max(o_size - section_size, 1);
                 for (c_last = c; *c_last == '/'; ++c_last);
                 continue;
             }
 
-            // Copy path section
-            last_section_size = c - c_last;
-            strncpy(o + o_size, c_last, last_section_size);
-            o_size += last_section_size;
+            // Copy the path section
+            section_size = c - c_last;
+            strncpy(o + o_size, c_last, section_size);
+            o_size += section_size;
 
-            // Copy the path separater
-            if (!(parsed_rel && *c == '\0'))
+            // Set the last point, skipping over slashes
+            for (c_last = c; *c_last == '/'; ++c_last);
+
+            // Add a separator, except at end of the relative string
+            if (!(*path == rel && *c == '\0') &&
+                section_size > 0)
             {
                 strcpy(o + o_size, "/");
                 ++o_size;
-                ++last_section_size;
+                ++section_size;
             }
 
-            // Skip over redundant slashes
-            for (c_last = c; *c_last == '/'; ++c_last);
-        }
-
-        // End of string
-        if (!*c)
-        {
-            if (parsed_rel)
-            {
-                // Finished parsing
-                break;
-            }
-            parsed_rel = true;
-            // Begin parsing relative section
-            c = rel;
-            for (c_last = c; *c_last == '/'; ++c_last);
-            c = c_last;
+            if (*c == '\0') break;
         }
     }
-    c_last = rel;
 
+    // Make sure the N-T is there
     o[o_size] = '\0';
     return o_size;
 }
@@ -129,7 +130,11 @@ utf8_strnlen_w_formats(const char *s, size_t n)
             is_escape = true;
             continue;
         }
-        is_escape = false;
+        if (is_escape && *s == 'm')
+        {
+            is_escape = false;
+            continue;
+        }
 
         count += (*s & 0xC0) != 0x80;
     }
@@ -154,7 +159,11 @@ utf8_size_w_formats(const char *s, size_t l)
             is_escape = true;
             continue;
         }
-        is_escape = false;
+        if (is_escape && *s == 'm')
+        {
+            is_escape = false;
+            continue;
+        }
 
         count += (*s & 0xC0) != 0x80;
     }
@@ -172,8 +181,7 @@ connect_socket_to(const char *hostname, int port)
     char port_str[5];
     snprintf(port_str, sizeof(port_str), "%04d", port);
 
-    tui_status_prepare();
-    tui_say("Looking up address ...");
+    tui_status_say("Looking up address ...");
 
     // Get host addresses
     struct addrinfo hints;
@@ -197,8 +205,8 @@ connect_socket_to(const char *hostname, int port)
             i->ai_addr->sa_family,
             SOCK_STREAM, 0)) < 0)
         {
-            tui_status_prepare();
-            tui_say("error: failed to create socket");
+            tui_status_say("error: failed to create socket");
+
             sock = 0;
             continue;
         }
@@ -214,21 +222,22 @@ connect_socket_to(const char *hostname, int port)
             setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
             (char *)&timeout, sizeof(timeout)) < 0)
         {
-            tui_status_prepare();
-            tui_say("error: failed to set socket timeout");
+            tui_status_say("error: failed to set socket timeout");
+
             sock = 0;
             continue;
         }
 
-        tui_status_prepare();
-        tui_say("Connecting ...");
+        tui_status_say("Connecting ...");
 
         // Connect socket
         if (connect(sock, (struct sockaddr *)i->ai_addr,
             i->ai_addrlen) < 0)
         {
-            tui_status_prepare();
+            tui_status_begin();
             tui_printf("error: failed to connect to %s", hostname);
+            tui_status_end();
+
             sock = 0;
             continue;
         }
@@ -238,7 +247,7 @@ connect_socket_to(const char *hostname, int port)
     }
     if (!connected)
     {
-        tui_status_prepare();
+        tui_status_begin();
         if (res == NULL)
         {
             tui_printf("error: no addresses for '%s'", hostname);
@@ -247,6 +256,8 @@ connect_socket_to(const char *hostname, int port)
         {
             tui_printf("error: could not connect to '%s'", hostname);
         }
+        tui_status_end();
+
         freeaddrinfo(res);
         return 0;
     }

@@ -11,7 +11,7 @@ struct recv_buffer *g_recv;
 void program_exited(void);
 
 int
-main(void)
+main(int argc, char **argv)
 {
     g_state = calloc(1, sizeof(struct state));
     g_recv = &g_state->recv_buffer;
@@ -31,6 +31,40 @@ main(void)
 
     gemini_init();
     tofu_init();
+
+    enum cmd_arg_mode
+    {
+        CMD_ARGS_NONE = 0,
+        CMD_ARGS_FILE,
+        CMD_ARGS_URI,
+    } argmode = CMD_ARGS_NONE;
+
+    // Check the command-line args for content
+    for (++argv; *argv != NULL; ++argv)
+    {
+        if (access(*argv, F_OK) == 0)
+        {
+            argmode = CMD_ARGS_FILE;
+
+            // Load the given file into the pager
+            struct uri uri;
+            memset(&uri, 0, sizeof(struct uri));
+            uri.protocol = PROTOCOL_FILE;
+            strncpy(uri.path, *argv, URI_PATH_MAX);
+
+            tui_go_to_uri(&uri, true, false);
+
+            break;
+        }
+
+        // See if we can parse a URI
+        struct uri uri = uri_parse(*argv, strlen(*argv));
+        if (tui_go_to_uri(&uri, true, false) == 0)
+        {
+            argmode = CMD_ARGS_URI;
+            break;
+        }
+    }
 
     // Set some temporary content
 #if 0
@@ -103,7 +137,7 @@ main(void)
         "consectetur ultricies. Praesent et nulla id mauris efficitur porttitor. Aenean"
         "vel laoreet velit, ac volutpat sem. Morbi vulputate, nisl eget vestibulum"
         "scelerisque, mauris orci mollis purus, efficitur laoreet risus dolor quis"
-        "sapien. Aenean pellentesque \x1b[93;41mnisi eu dignissim\x1b[0m dignissim. Pellentesque dignissim"
+        "sapien. Aenean pellentesque \x1b[93;41mnisi eu dignissim testing \x1b[0mPellentesque dignissim"
         "mi ultricies diam aliquet, nec sodales ligula euismod. Duis eu pretium lorem."
         "Phasellus et massa vehicula, tristique augue at, imperdiet diam. Proin eget"
         "risus vitae lacus sollicitudin luctus"
@@ -116,14 +150,6 @@ main(void)
         "\n"
         "## Built with:\n"
         "* SSL: " OPENSSL_VERSION_TEXT "\n"
-        "\n"
-        "This is a test paragraph\n"
-        "\n"
-        "### List test\n"
-        "* List item 0\n"
-        "* List item 1\n"
-        "* List item 2\n"
-        "* List item 3\n"
         "\n"
         "### Some links\n"
         "=> gemini://gemini.circumlunar.space/ Gemini Homepage\n"
@@ -138,6 +164,7 @@ main(void)
         "=> gemini://example.com/\n"
         "=> gemini://midnight.pub/\n"
         "=> gemini://rawtext.club/~ploum/2022-03-24-ansi_html.gmi/\n"
+        "=> gemini://zaibatsu.circumlunar.space/~solderpunk Zaibatsu - solderpunk\n"
         "\n"
         "# Very long heading that should wrap very nicely blah blah blah blah blah\n"
         "This is a test paragraph\n"
@@ -145,13 +172,16 @@ main(void)
         "> This is a test blockquote that should also wrap pretty nice I reckon, blah blah blah\n"
         "This is a test paragraph\n";
 #endif
-    g_recv->size = strlen(PAGER_CONTENT) + 1;
-    recv_buffer_check_size(g_recv->size);
-    memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
-    mime_parse(&g_recv->mime, MIME_GEMTEXT, strlen(MIME_GEMTEXT));
+    if (argmode == CMD_ARGS_NONE)
+    {
+        g_recv->size = strlen(PAGER_CONTENT) + 1;
+        recv_buffer_check_size(g_recv->size);
+        memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
+        mime_parse(&g_recv->mime, MIME_GEMTEXT, strlen(MIME_GEMTEXT));
 
-    // Typeset the content
-    pager_update_page(-1, 0);
+        // Typeset the content
+        pager_update_page(-1, 0);
+    }
 
     for(;!g_sigint_caught;)
     {

@@ -64,8 +64,7 @@ gemini_request(struct uri *uri)
         TLSEXT_NAMETYPE_host_name,
         (void *)uri->hostname);
 
-    tui_status_prepare();
-    tui_say("TLS handshake ...");
+    tui_status_say("TLS handshake ...");
 
     // TLS handshake
     int ssl_status;
@@ -76,7 +75,7 @@ gemini_request(struct uri *uri)
         const char *reason_str = ERR_reason_error_string(reason);
     #endif
 
-        tui_status_prepare();
+        tui_status_begin();
         if (ssl_status == 0)
         {
             tui_printf("error: TLS connection closed");
@@ -88,19 +87,18 @@ gemini_request(struct uri *uri)
                 uri->hostname);
                 //"(%lu: %s)", reason, reason_str);
         }
+        tui_status_end();
         goto fail;
     }
 
-    tui_status_prepare();
-    tui_say("Successful connection");
+    tui_status_say("Successful connection");
 
     // Verify certificate (using TOFU)
     X509 *cert = SSL_get_peer_certificate(gem->ssl);
     if (cert == NULL)
     {
         // Somehow no certificate was presented
-        tui_status_prepare();
-        tui_say("error: server did not present a certificate");
+        tui_status_say("error: server did not present a certificate");
         goto fail;
     }
     else
@@ -109,17 +107,14 @@ gemini_request(struct uri *uri)
         switch (tofu_status)
         {
         case TOFU_VERIFY_OK:
-            tui_status_prepare();
-            tui_say("tofu: host fingerprints match");
+            tui_status_say("tofu: host fingerprints match");
             break;
         case TOFU_VERIFY_FAIL:
             // TODO: prompt user to decide whether to trust new certificate
-            tui_status_prepare();
-            tui_say("tofu: fingerprint mismatch!");
+            tui_status_say("tofu: fingerprint mismatch!");
             goto fail;
         case TOFU_VERIFY_NEW:
-            tui_status_prepare();
-            tui_say("tofu: blindly trusting certificate "
+            tui_status_say("tofu: blindly trusting certificate "
                 "from unrecognised host");
             break;
         }
@@ -143,9 +138,10 @@ gemini_request(struct uri *uri)
             sizeof(response_header))) <= 0 &&
         (ssl_error = SSL_get_error(gem->ssl, read_code)) != SSL_ERROR_NONE)
     {
-        tui_status_prepare();
+        tui_status_begin();
         tui_printf("Error while reading response header data (error %d)",
             ssl_error);
+        tui_status_end();
         goto fail;
     }
 
@@ -153,8 +149,10 @@ gemini_request(struct uri *uri)
     int response_header_len_mime = strcspn(response_header, "\r;");
     response_header[response_header_len_mime] = '\0';
     response_header[response_header_len] = '\0';
-    tui_status_prepare();
+
+    tui_status_begin();
     tui_printf("Server responded: %s", response_header);
+    tui_status_end();
 
     // Interpret response code
     switch(response_header[0])
@@ -194,8 +192,7 @@ gemini_request(struct uri *uri)
             g_recv->size = 0;
             if (response_code < 0)
             {
-                tui_status_prepare();
-                tui_printf("Error reading server response body");
+                tui_status_say("Error reading server response body");
                 goto fail;
             }
             g_recv->size = recv_bytes;
@@ -223,8 +220,10 @@ gemini_request(struct uri *uri)
             uri_abs(&g_state->uri, &redirect_uri);
 
             // Perform redirect
-            tui_status_prepare();
+            tui_status_begin();
             tui_printf("Redirecting to %s", redirect_uri_str);
+            tui_status_end();
+
             tui_go_to_uri(&redirect_uri, true, false);
 
             break;

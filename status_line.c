@@ -29,7 +29,7 @@ status_line_paint(void)
 
         c->len_prev = c->len;
 
-        char text[64];
+        char text[256];
         int x_pos = 0;
 
         switch(cid)
@@ -38,10 +38,16 @@ status_line_paint(void)
         {
             // Just display page URI for now
             c->bytes = uri_str(&g_state->uri,
-                text, sizeof(text), URI_FLAGS_NONE);
-            c->len = min(utf8_strnlen_w_formats(text, c->bytes),
-                max(g_tui->w - 4, 0));
-            c->bytes = utf8_size_w_formats(text, c->len);
+                text, sizeof(text), URI_FLAGS_FANCY_BIT);
+            c->len = utf8_strnlen_w_formats(text, c->bytes);
+
+            // Don't render whole text if it exceeds terminal width
+            if (c->len > g_tui->w - 4)
+            {
+                c->len = g_tui->w - 4;
+                c->bytes = utf8_size_w_formats(text, c->len);
+            }
+
             x_pos = 1;
         } break;
 
@@ -73,7 +79,8 @@ status_line_paint(void)
 
         // Draw the new text
         tui_cursor_move(x_pos, g_tui->h - 1);
-        tui_say("\x1b[30;42m");
+        //tui_say("\x1b[30;42m");
+        tui_say("\x1b[2m");
         tui_sayn(text, c->bytes);
         tui_say("\x1b[0m");
 
@@ -82,6 +89,6 @@ status_line_paint(void)
         {
             tui_cursor_move(g_tui->w - (int)c->len_prev + 1, g_tui->h - 1);
         }
-        for (int j = c->len; j < c->len_prev; tui_say(" "), ++j);
+        tui_printf("%*s", (int)(c->len_prev - c->len), "");
     }
 }

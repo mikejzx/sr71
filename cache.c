@@ -42,8 +42,7 @@ cache_init(void)
         // Create with RW for owner and group
         mkdir(CACHE_PATH, DIR_PERMS) != 0)
     {
-        tui_status_prepare();
-        tui_say("cache: failed to make cache directory " CACHE_PATH);
+        tui_status_say("cache: failed to make cache directory " CACHE_PATH);
         return -1;
     }
 
@@ -185,10 +184,11 @@ cache_push_current(void)
 
     if (!item)
     {
-        tui_status_prepare();
+        tui_status_begin();
         tui_say("cache: max size of ");
         tui_print_size(CACHE_IN_MEM_MAX_SIZE);
         tui_say(" exceeded.");
+        tui_status_end();
         return;
     }
 

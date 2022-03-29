@@ -3,7 +3,7 @@
 #include "state.h"
 #include "typesetter.h"
 
-static const int CONTENT_WIDTH_PREFERRED = 70;
+static const int CONTENT_WIDTH_PREFERRED = 80;
 
 struct pager_state *g_pager;
 
@@ -13,7 +13,7 @@ static void
 pager_recalc_margin(void)
 {
     int marg = g_pager->visible_buffer.w - CONTENT_WIDTH_PREFERRED;
-    g_pager->margin_bias = 0.5f;
+    g_pager->margin_bias = 0.3f;
     g_pager->margin.l = max(0, marg * g_pager->margin_bias);
     g_pager->margin.r = max(0, marg * (1.0f - g_pager->margin_bias));
 }
@@ -40,6 +40,10 @@ pager_update_page(int selected, int scroll)
     g_pager->selected_link_index = selected;
     g_pager->scroll = scroll;
 
+    // Reset marks
+    memset(g_pager->marks, 0, sizeof(g_pager->marks));
+
+    // Re-calculate margins
     pager_recalc_margin();
 
     // Copy page data into the typesetter
@@ -56,8 +60,9 @@ pager_update_page(int selected, int scroll)
 
     if (!typeset)
     {
-        tui_status_prepare();
+        tui_status_begin();
         tui_printf("no mailcap entry for '%s'", g_recv->mime.str);
+        tui_status_end();
 
         // TODO open file with mailcap entry?
     }
@@ -230,15 +235,10 @@ pager_paint(void)
         // Move cursor to correct place
         tui_cursor_move(0, i + 1);
 
-        // Fill left margin
+        // Fill the left margin with space
         tui_printf("%*s", g_pager->margin.l, "");
 
         struct pager_buffer_line *const line = &g_pager->visible_buffer.rows[i];
-
-        int clear_count = (int)g_pager->visible_buffer_prev.rows[i].len;
-        tui_printf("%*s", clear_count, "");
-
-        tui_cursor_move(g_pager->margin.l, i + 1);
 
         // Draw the line
         bool highlighted = false;
@@ -278,23 +278,26 @@ pager_paint(void)
         }
         else
         {
+        #define CLEAR_VI_STYLE
+        #ifdef CLEAR_VI_STYLE
             // Because vi
             tui_say("~");
             line->bytes = 1;
             line->len = 1;
+        #else
+            line->bytes = 0;
+            line->len = 0;
+        #endif
         }
 
-        // Clear out the old line part that was here
-        //int clear_count =
-        //    (int)g_pager->visible_buffer_prev.rows[i].bytes - (int)line->bytes;
-        //clear_count = max(min(clear_count,
-        //    (int)g_pager->visible_buffer.w - (int)line->len),
-        //    0);
-        // TODO FIX THIS SO ONLY NECESSARY CHARS ARE CLEARED
-        //int clear_count = max(
-        //    g_pager->visible_buffer.w - 50 - (int)line->len, 0);
-        //int clear_count = max((int)g_pager->visible_buffer_prev.rows[i].len - (int)line->len, 0);
-        //tui_printf("%*s", clear_count, "");
+        // Clear old line
+        tui_cursor_move((int)line->len + g_pager->margin.l + 1, i + 1);
+        int clear_count =
+            (int)g_pager->visible_buffer_prev.rows[i].len - (int)line->len;
+        clear_count = max(clear_count, 0);
+        //clear_count = min(max(clear_count, 0),
+        //    g_pager->visible_buffer.w - (int)line->len);
+        tui_printf("%*s", clear_count, "");
     }
 
     // Swap pointers to store old rows so we know what to clear on next paint

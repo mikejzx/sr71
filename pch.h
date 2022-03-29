@@ -10,6 +10,7 @@
 #define CACHE_PATH_GEMINI CACHE_PATH "/gemini"
 #define CACHE_PATH_GOPHER CACHE_PATH "/gopher"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>

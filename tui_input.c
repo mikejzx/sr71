@@ -11,10 +11,54 @@ static int tui_handle_mode_normal(char);
 static int tui_handle_mode_input(char);
 static int tui_handle_mode_links(char);
 
+enum single_char_mode
+{
+    SMODE_NONE = 0,
+    SMODE_MARK_SET,
+    SMODE_MARK_FOLLOW,
+} s_next_char = SMODE_NONE;
+
 int
 tui_handle_input(char buf)
 {
     static int result;
+
+    // Marks are handled a bit strangely for the moment; they're seperate from
+    // the main state machine.  The input code needs to be re worked quite a bit
+    // for a better cleaner implementation...
+    if (s_next_char != SMODE_NONE)
+    {
+        tui_status_clear();
+
+        if (buf == '\n' ||
+            buf == '\x1b' ||
+            !(isalpha(buf) || isdigit(buf)))
+        {
+            result = 0;
+            s_next_char = SMODE_NONE;
+            return 0;
+        }
+
+        int index;
+        if (buf <= '9') index = buf - '0';
+        else if (buf <= 'Z') index = buf - 'A' + '9' - '0' + 1;
+        else index = buf - 'a' + '9' - '0' + 1 + 'Z' - 'A' + 1;
+
+        switch(s_next_char)
+        {
+        case SMODE_MARK_SET:
+            g_pager->marks[index] = g_pager->scroll;
+            break;
+        case SMODE_MARK_FOLLOW:
+            g_pager->scroll = g_pager->marks[index];
+            tui_invalidate();
+            break;
+        default: break;
+        }
+        s_next_char = SMODE_NONE;
+
+        return 0;
+    }
 
     switch(g_tui->mode)
     {
@@ -76,9 +120,10 @@ tui_handle_input(char buf)
     case TUI_MODE_INPUT:
     case TUI_MODE_LINKS:
         // Write the prompt message and show cursor
-        tui_status_prepare();
+        tui_status_begin();
         tui_sayn(g_tui->input_prompt, g_tui->input_prompt_len);
         tui_say("\x1b[?25h");
+        tui_status_end();
 
         if (g_tui->input_caret)
         {
@@ -108,6 +153,7 @@ tui_handle_common_movement(char buf)
 {
     switch (buf)
     {
+    // The basic vi/less style keys
     case 'j':
     case ('E' ^ 0100):
         pager_scroll(1);
@@ -144,6 +190,8 @@ tui_handle_common_movement(char buf)
         pager_scroll_bottom();
         s_invalidate = true;
         return true;
+
+    // Paragraph/heading movement
     case '{':
         pager_scroll_paragraph(-1);
         s_invalidate = true;
@@ -160,6 +208,17 @@ tui_handle_common_movement(char buf)
         pager_scroll_heading(1);
         s_invalidate = true;
         return true;
+
+    // Mark handling (m to set, ' to follow)
+    case 'm':
+        s_next_char = SMODE_MARK_SET;
+        tui_status_say("set mark?");
+        return true;
+    case '\'':
+        s_next_char = SMODE_MARK_FOLLOW;
+        tui_status_say("follow mark?");
+        return true;
+
     // Not handled
     default: return false;
     }
@@ -256,8 +315,7 @@ tui_handle_mode_normal(char buf)
         const struct history_item *const item = history_pop();
         if (item == NULL || !item->initialised)
         {
-            tui_status_prepare();
-            tui_say("No older history");
+            tui_status_say("No older history");
             break;
         }
 
@@ -274,8 +332,7 @@ tui_handle_mode_normal(char buf)
         const struct history_item *const item = history_next();
         if (item == NULL || !item->initialised)
         {
-            tui_status_prepare();
-            tui_say("No re-do history");
+            tui_status_say("No re-do history");
             break;
         }
 
@@ -490,8 +547,7 @@ tui_handle_mode_links(char buf)
         }
         else
         {
-            tui_status_prepare();
-            tui_say("No such link");
+            tui_status_say("No such link");
         }
 
         // Change back to normal input
@@ -647,6 +703,7 @@ tui_handle_mode_links(char buf)
 
     // Clear old link name that was there
 update_link_peek:
+    tui_status_begin_soft();
     tui_cursor_move(x_pos + 1, g_tui->h);
     tui_printf("%*s", g_tui->w - x_pos, "");
 
@@ -668,6 +725,7 @@ update_link_peek:
         s_invalidate = true;
     }
     tui_cursor_move(x_pos + 1, g_tui->h);
+    tui_status_end();
 
     return 0;
 }

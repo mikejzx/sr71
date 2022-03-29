@@ -123,9 +123,19 @@ uri_str(
     if (!uri->port ||
         flags & URI_FLAGS_NO_PORT_BIT)
     {
+        const char *fmt = "%s" // Scheme
+            "%s"               // Hostname
+            "%s%s";            // Path
+        if (flags & URI_FLAGS_FANCY_BIT)
+        {
+            // Print some escapes with it
+            fmt = "\x1b[2m%s\x1b[0m"
+                "%s"
+                "\x1b[2m%s%s\x1b[0m";
+        }
+
         // Print without port
-        return snprintf(buf, buf_size,
-            "%s%s%s%s",
+        return snprintf(buf, buf_size, fmt,
             scheme,
             uri->hostname,
             (*uri->path != '/' && *uri->path != '\0') ? "/" : "",

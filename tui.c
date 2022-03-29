@@ -78,9 +78,9 @@ int
 tui_update(void)
 {
     ssize_t read_n = 0;
-    for (char buf = 0;; read_n = read(STDOUT_FILENO, &buf, 1))
+    for (char buf[16];; read_n = read(STDOUT_FILENO, &buf, sizeof(buf)))
     {
-        if (read_n < 0 || buf == '\0')
+        if (read_n < 0 || *buf == '\0')
         {
             // We need this sleep or else the program pins a core to 100%
             // usage...
@@ -88,7 +88,11 @@ tui_update(void)
             continue;
         }
 
-        if (tui_handle_input(buf) < 0) return -1;
+        for (int x = 0; x < read_n; ++x)
+        {
+            // TODO: properly handle the full read buffer
+            if (tui_handle_input(buf[x]) < 0) return -1;
+        }
     }
 
     return 0;
@@ -159,7 +163,7 @@ tui_go_from_input(void)
 }
 
 /* Goto a site */
-void
+int
 tui_go_to_uri(
     const struct uri *const uri_in,
     bool push_hist,
@@ -167,14 +171,13 @@ tui_go_to_uri(
 {
     static struct uri uri;
     memcpy(&uri, uri_in, sizeof(struct uri));
-    tui_status_prepare();
 
     if (uri.protocol == PROTOCOL_UNKNOWN ||
         uri.protocol == PROTOCOL_FINGER)
     {
         // Show error message
-        tui_say("Unsupported protocol");
-        return;
+        tui_status_say("Unsupported protocol");
+        return -1;
     }
 
     // Assume Gemini if no scheme given
@@ -187,12 +190,14 @@ tui_go_to_uri(
     if (uri.protocol != PROTOCOL_FILE &&
         uri.hostname[0] == '\0')
     {
-        tui_say("Invalid URI");
-        return;
+        tui_status_say("Invalid URI");
+        return -1;
     }
 
     // Show status message
+    tui_status_begin();
     tui_printf("Loading %s ...", g_tui->input);
+    tui_status_end();
 
     int success;
     bool do_cache = false;
@@ -208,9 +213,10 @@ tui_go_to_uri(
 
         if (success == 0)
         {
-            tui_status_prepare();
+            tui_status_begin();
             tui_printf("Loaded content from %s, ", uri.hostname);
             tui_print_size(g_recv->size);
+            tui_status_end();
 
             if (!force_nocache) do_cache = true;
         }
@@ -223,7 +229,7 @@ tui_go_to_uri(
 
         if (success == 0)
         {
-            tui_status_prepare();
+            tui_status_begin();
             if (is_dir)
             {
                 tui_printf("Loaded directory, %d entries", is_dir - 1);
@@ -233,6 +239,7 @@ tui_go_to_uri(
                 tui_printf("Loaded local file, ");
                 tui_print_size(g_recv->size);
             }
+            tui_status_end();
         }
         break;
 
@@ -270,22 +277,5 @@ tui_go_to_uri(
             cache_push_current();
         }
     }
-}
-
-/* Clear the command line/output TUI */
-void
-tui_status_clear(void)
-{
-    tui_cursor_move(0, g_tui->h);
-
-    // This little trick prints repeated spaces for a given count :D
-    tui_printf("%*s", g_tui->w, "");
-}
-
-/* Prepare the command status line for writing (clear it, etc.) */
-void
-tui_status_prepare(void)
-{
-    tui_status_clear();
-    tui_cursor_move(0, g_tui->h);
+    return success;
 }

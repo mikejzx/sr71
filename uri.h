@@ -57,9 +57,9 @@ enum uri_string_flags
     // Exclude the port in the string.
     URI_FLAGS_NO_PORT_BIT = 1,
 
-    // Include fancy URI styling/colouring escape codes (TODO implement this).
-    // Essentially this should make the hostname appear in a brighter colour
-    // than the other parts of the URI
+    // Include fancy URI styling/colouring escape codes Essentially this should
+    // make the hostname appear in a brighter colour than the other parts of
+    // the URI
     URI_FLAGS_FANCY_BIT = 2,
 
     // Do not include protocol in string

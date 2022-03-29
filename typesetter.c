@@ -45,6 +45,14 @@ typesetter_reinit(struct typesetter *t)
 
         t->raw_lines[l].s = &g_recv->b[l_prev + 1];
         t->raw_lines[l].bytes = i - l_prev - (int)(g_recv->b[i] == '\n');
+
+        if (i > 0 && g_recv->b[i - 1] == '\r')
+        {
+            // Get rid of carriage-returns; this also fixes clearing with the
+            // pager
+            --t->raw_lines[l].bytes;
+        }
+
         t->raw_lines[l].len = utf8_strnlen_w_formats(
             &g_recv->b[l_prev + 1],
             t->raw_lines[l].bytes);
@@ -205,9 +213,10 @@ typeset_gemtext(
          * enormous files) if huge indent amounts or link/list prefixes, etc.
          * add up.
          */ \
-        tui_status_prepare(); \
+        tui_status_begin(); \
         tui_printf("Aborting render (exceeded buffer size %.1f KiB).  FIXME", \
             b->size / 1024.0f); \
+        tui_status_end(); \
         return 0; \
     }
 #define LINE_START() \
@@ -216,7 +225,6 @@ typeset_gemtext(
         if (line_started) break; \
         line_started = true; \
         line->s = buffer_pos; \
-        line->bytes = 0; \
         line->raw_index = raw_index; \
         line->raw_dist = 0; \
         line->is_heading = false; \
@@ -226,6 +234,7 @@ typeset_gemtext(
     { \
         if (!line_started) break; \
         line_started = false; \
+        line->bytes = buffer_pos - line->s; \
         line->len = utf8_strnlen_w_formats(line->s, line->bytes); \
         line->raw_dist = gemtext.raw_dist; \
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >= \
@@ -253,7 +262,6 @@ typeset_gemtext(
         strncpy(buffer_pos, \
             (str), \
             min(n_bytes, buffer_end_pos - buffer_pos)); \
-        line->bytes += n_bytes; \
         buffer_pos += n_bytes; \
         gemtext.raw_dist += n_bytes; \
         if (gemtext.link) gemtext.link->buffer_loc_len += n_bytes; \
@@ -266,7 +274,6 @@ typeset_gemtext(
             (fmt), \
             __VA_ARGS__); \
     BUFFER_CHECK_SIZE(LINE_PRINTF_N_BYTES); \
-    line->bytes += LINE_PRINTF_N_BYTES; \
     buffer_pos += LINE_PRINTF_N_BYTES; \
     gemtext.raw_dist += LINE_PRINTF_N_BYTES; \
     if (gemtext.link) gemtext.link->buffer_loc_len += LINE_PRINTF_N_BYTES;
@@ -306,7 +313,7 @@ typeset_gemtext(
         gemtext.link = NULL;
         gemtext.raw_dist = 0;
         gemtext.hang = 0;
-        gemtext.indent = 0;
+        gemtext.indent = 1;
         gemtext.esc = NULL;
         gemtext.esc_len = 0;
         *gemtext.prefix = 0;
@@ -328,7 +335,7 @@ typeset_gemtext(
         if (gemtext.mode == PARSE_VERBATIM)
         {
             // Print text verbatim
-            gemtext.indent = 1;
+            gemtext.indent = 2;
             LINE_INDENT(false);
             LINE_STRNCPY(rawline->s, rawline->bytes);
             LINE_FINISH();
@@ -391,15 +398,15 @@ typeset_gemtext(
                 if (*i == ' ' ||
                     *i == '\t')
                 {
-                    // TODO: check if UTF-8 strings work with this
-                    // TODO make sure this works when sections have multiple
-                    //      spaces
-                    gemtext.hang = rawline->s + heading_level - i;
+                    gemtext.hang = utf8_strnlen_w_formats(
+                        rawline->s + heading_level,
+                        i - rawline->s + heading_level);
                     break;
                 }
             }
 
             line->is_heading = true;
+            gemtext.indent = 0;
         }
 
         // Parse links
@@ -548,13 +555,13 @@ typeset_gemtext(
         // when a large word would span across lines.
         const char *c_prev = rawline->s + gemtext.raw_bytes_skip;
         gemtext.raw_bytes_skip = 0;
-        int chars_this_column = 0;
+        int chars_this_column =
+            utf8_strnlen_w_formats(line->s, buffer_pos - line->s);
         for (const char *c = c_prev;
             c <= rawline->s + rawline->bytes;
             ++c)
         {
             // Set the most recent escape code to print at beginning of next line
-        #if 0
             if (*c == '\x1b')
             {
                 const char *esc_start = c;
@@ -566,7 +573,7 @@ typeset_gemtext(
                     {
                         // End of escape code
                         gemtext.esc = esc_start;
-                        gemtext.esc_len = c - esc_start;
+                        gemtext.esc_len = c - esc_start + 1;
                         break;
                     }
 
@@ -578,8 +585,8 @@ typeset_gemtext(
                         break;
                     }
                 }
+                continue;
             }
-        #endif
 
             // Found a space or we are at end of line
             if (*c == ' ' ||
@@ -590,7 +597,7 @@ typeset_gemtext(
                     // Fill in what we can of this column with the beginning of
                     // this huge word
                     int chars_count = max(width - chars_this_column - 1, 0);
-                    if (chars_count > 8)
+                    if (chars_count > 8) // 8 is an alright number
                     {
                         // For now only allow hyphenation on actual letters.
                         // Apparently real hyphenation should only occur
@@ -626,11 +633,11 @@ typeset_gemtext(
                     }
 
                     // Clear the escape to make clearing text a bit cleaner
-                    //LINE_STRNCPY_LIT("\x1b[0m");
+                    LINE_STRNCPY_LIT("\x1b[0m");
 
                     // Start next line
                     LINE_FINISH();
-                    chars_this_column = 0;
+                    chars_this_column = gemtext.indent + gemtext.hang;
                     LINE_START();
                     LINE_INDENT(true);
 

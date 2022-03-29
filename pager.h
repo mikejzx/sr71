@@ -87,6 +87,11 @@ struct pager_state
         int l, r;
     } margin;
     float margin_bias;
+
+    // "Marks" (like in vi and less).  Only allow alphanumeric registers for
+    // the moment to prevent any crazy issues.  If people seriously need to use
+    // symbols as their registers then perhaps we could add them in?
+    int marks['9' - '0' + 'Z' - 'A' +  'z' - 'a'];
 };
 
 extern struct pager_state *g_pager;
