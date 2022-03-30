@@ -21,20 +21,22 @@ static inline void
 mime_parse(struct mime *m, const char *s, size_t s_len)
 {
     // Copy full string
-    strncpy(m->str, s, MIME_TYPE_MAX);
+    const size_t len = min(MIME_TYPE_MAX, s_len + 1);
+    strncpy(m->str, s, len);
+    m->str[len - 1] = '\0';
 
     // Get location of separator
     for (const char *x = m->str;; ++x)
     {
-        if (*x == '/')
-        {
-            m->sep = x - m->str;
-            break;
-        }
-
         if (!*x || x >= s + s_len)
         {
             m->sep = -1;
+            break;
+        }
+
+        if (*x == '/')
+        {
+            m->sep = x - m->str;
             break;
         }
     }
@@ -42,7 +44,9 @@ mime_parse(struct mime *m, const char *s, size_t s_len)
 
 /* Check if MIME is equal to a string */
 static inline bool
-mime_eqs(struct mime *m, const char *s)
+mime_eqs(
+    const struct mime *restrict const m,
+    const char *restrict s)
 {
     return strcmp(m->str, s) == 0;
 }

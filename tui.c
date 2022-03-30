@@ -204,13 +204,14 @@ tui_go_to_uri(
 
     int success;
     bool do_cache = false;
+    struct cached_item *cache_item = NULL;
 
     // Handle protocol/requests
     switch (uri.protocol)
     {
     case PROTOCOL_GEMINI:
     case PROTOCOL_GOPHER:
-        bool from_cache = !force_nocache && cache_find(uri_in);
+        bool from_cache = !force_nocache && cache_find(uri_in, &cache_item);
         if (!from_cache)
         {
             success = uri.protocol == PROTOCOL_GEMINI
@@ -261,27 +262,41 @@ tui_go_to_uri(
 
     if (success == 0)
     {
+        // Update the last selection/scroll of last cached page
+        if (g_pager->cached_page)
+        {
+            g_pager->cached_page->session.last_sel =
+                g_pager->selected_link_index;
+            g_pager->cached_page->session.last_scroll =
+                g_pager->scroll;
+        }
+
         // Update current URI state
         memcpy(&g_state->uri, uri_in, sizeof(struct uri));
 
-        int sel, scroll;
         if (push_hist)
         {
-            history_push(&g_state->uri,
-                g_pager->selected_link_index, g_pager->scroll);
-            sel = -1;
-            scroll = 0;
-        }
-        else
-        {
-            // Page is presumably from history, so read the
-            // last selection/scroll values
-            sel = g_hist->ptr->last_sel;
-            scroll = g_hist->ptr->last_scroll;
+            history_push(&g_state->uri);
         }
 
         // Push the page to the cache
-        if (do_cache) { cache_push_current(); }
+        if (do_cache) { g_pager->cached_page = cache_push_current(); }
+        else g_pager->cached_page = NULL;
+
+        int sel, scroll;
+
+        // And get the new selection/scroll for the newly-loaded page
+        if (cache_item)
+        {
+            sel = cache_item->session.last_sel;
+            scroll = cache_item->session.last_scroll;
+            g_pager->cached_page = cache_item;
+        }
+        else
+        {
+            sel = -1;
+            scroll = 0;
+        }
 
         // Update the pager
         pager_update_page(sel, scroll);

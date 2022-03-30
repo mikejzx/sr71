@@ -45,7 +45,7 @@ get_prev_hist_ptr(void)
 }
 
 void
-history_push(struct uri *uri, int last_sel, int last_scroll)
+history_push(struct uri *uri)
 {
     // Wrap history back to start if needed
     g_hist->ptr = get_next_hist_ptr();
@@ -64,8 +64,6 @@ history_push(struct uri *uri, int last_sel, int last_scroll)
     }
 
     g_hist->ptr->initialised = true;
-    g_hist->ptr->last_sel = last_sel;
-    g_hist->ptr->last_scroll = last_scroll;
     memcpy(&g_hist->ptr->uri, uri, sizeof(struct uri));
 
     // Now that we've pushed new history onto the stack we need to deinitialise

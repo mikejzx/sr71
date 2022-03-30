@@ -63,8 +63,7 @@ gopher_request(struct uri *uri)
     }
     g_recv->size = recv_bytes;
 
-    // Update MIME; for now everything is gophermap
-    //mime_parse(&g_recv->mime, MIME_GOPHERMAP, strlen(MIME_GOPHERMAP) + 1);
+    // Get MIME
     switch (uri->gopher_item)
     {
     default:
@@ -73,10 +72,10 @@ gopher_request(struct uri *uri)
         // TODO mailcap
     case GOPHER_ITEM_TEXT:
     case GOPHER_ITEM_BIN:
-        mime_parse(&g_recv->mime, MIME_PLAINTEXT, strlen(MIME_PLAINTEXT) + 1);
+        mime_parse(&g_recv->mime, MIME_PLAINTEXT, strlen(MIME_PLAINTEXT));
         break;
     case GOPHER_ITEM_DIR:
-        mime_parse(&g_recv->mime, MIME_GOPHERMAP, strlen(MIME_GOPHERMAP) + 1);
+        mime_parse(&g_recv->mime, MIME_GOPHERMAP, strlen(MIME_GOPHERMAP));
         break;
     }
 

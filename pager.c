@@ -172,7 +172,10 @@ pager_scroll_top(void) { g_pager->scroll = 0; }
 void
 pager_scroll_bottom(void)
 {
-    g_pager->scroll = g_pager->buffer.line_count - g_pager->visible_buffer.h;
+    g_pager->scroll =
+        (int)g_pager->buffer.line_count - (int)g_pager->visible_buffer.h / 2;
+    g_pager->scroll =
+        min(max(g_pager->scroll, 0), g_pager->buffer.line_count - 1);
 }
 
 /* Scroll to next paragraph (dir is -1 or 1) */

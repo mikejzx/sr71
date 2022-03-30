@@ -159,6 +159,7 @@ main(int argc, char **argv)
         "=> gemini://example.com/\n"
         "=> gopher://i-logout.cz:70/1/bongusta Test gopher page\n"
         "=> gopher://gopher.quux.org:70/\n"
+        "=> gopher://gopher.quix.us:70/\n"
         "=> gopher://gopher.floodgap.com Floodgap\n"
         "=> file:///home/mike/pages/gemtext/gemini.circumlunar.space/home.gmi Local file test\n"
         "=> file:///home/mike/ Local directory test\n"

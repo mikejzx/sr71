@@ -3,6 +3,8 @@
 #include "state.h"
 #include "tui.h"
 #include "uri.h"
+#include "pager.h"
+#include "cache.h"
 
 static enum tui_invalidate_flags s_invalidate;
 static enum tui_mode_id s_next_mode = TUI_MODE_UNKNOWN;
@@ -33,7 +35,7 @@ tui_handle_input(char buf)
 
         if (buf == '\n' ||
             buf == '\x1b' ||
-            !(isalpha(buf) || isdigit(buf)))
+            !is_alphanumeric(buf))
         {
             result = 0;
             s_next_char = SMODE_NONE;
@@ -312,9 +314,6 @@ tui_handle_mode_normal(char buf)
     case ',':
     case 'b':
     {
-        g_hist->ptr->last_sel = g_pager->selected_link_index;
-        g_hist->ptr->last_scroll = g_pager->scroll;
-
         const struct history_item *const item = history_pop();
         if (item == NULL || !item->initialised)
         {
@@ -329,9 +328,6 @@ tui_handle_mode_normal(char buf)
     case ';':
     case 'w':
     {
-        g_hist->ptr->last_sel = g_pager->selected_link_index;
-        g_hist->ptr->last_scroll = g_pager->scroll;
-
         const struct history_item *const item = history_next();
         if (item == NULL || !item->initialised)
         {
@@ -344,6 +340,7 @@ tui_handle_mode_normal(char buf)
 
     // 'Ctrl+P' go to parent directory
     case (0100 ^ 'P'):
+    case '.':
     {
         struct uri uri_rel =
         {
@@ -366,7 +363,33 @@ tui_handle_mode_normal(char buf)
     // 'r' refresh page
     case 'r':
     {
+    #ifdef CACHE_USE_DISK
+        // Copy the old hash
+        unsigned char old_hash[EVP_MAX_MD_SIZE];
+        unsigned old_hash_len = 0;
+        if (g_pager->cached_page &&
+            uri_cmp(&g_pager->cached_page->uri, &g_state->uri) == 0)
+        {
+            old_hash_len = g_pager->cached_page->hash_len;
+            memcpy(old_hash, g_pager->cached_page->hash, old_hash_len);
+        }
+
+        if (tui_go_to_uri(&g_state->uri, false, true) == 0 && old_hash_len)
+        {
+            // Check if the hashes match
+            if (old_hash_len == g_pager->cached_page->hash_len &&
+                memcmp(old_hash, g_pager->cached_page->hash, old_hash_len) == 0)
+            {
+                tui_status_say("no changes since last cache");
+            }
+            else
+            {
+                tui_status_say("page has changed since last cache");
+            }
+        }
+    #else
         tui_go_to_uri(&g_state->uri, false, true);
+    #endif
     } break;
 
     // Pressing a number goes into links mode
@@ -445,9 +468,65 @@ tui_handle_mode_input(char buf)
 
     switch (buf)
     {
-    /* Ctrl-W: backspace a whole word (TODO) */
+    /* Ctrl-W: backspace a whole word */
     case (0100 ^ 'W'):
-        goto backspace;
+    {
+        // We take a similar approach to what w3m does: remove until we reach a
+        // non-alphanumeric character
+        if (g_tui->input_caret <= 0)
+        {
+            // Can't backspace any further
+            return 0;
+        }
+        size_t new;
+        for (new = g_tui->input_caret - 1;
+            new > 0 && is_alphanumeric(g_tui->input[new - 1]);
+            --new);
+        int diff = max(g_tui->input_caret - new, 0);
+        g_tui->input_len -= diff;
+        g_tui->input_caret = new;
+        g_tui->input[g_tui->input_caret - 1] = '\0';
+        tui_cursor_move(x_pos - diff, g_tui->h);
+        tui_printf("%*s", diff, "");
+        tui_cursor_move(x_pos - diff, g_tui->h);
+    } return 0;
+
+    /* Ctrl-P: cycle protocol of URI */
+    case (0100 ^ 'P'):
+    {
+        const size_t LEN = strlen("gopher"), LEN_P = strlen("gopher://");
+
+        // Check for scheme and change them around (luckily 'gopher' and
+        // 'gemini' have same string length...)
+        if (g_tui->input_len >= LEN_P &&
+            strncmp(g_tui->input, "gopher://", LEN_P) == 0)
+        {
+            // Change the protocol to Gemini
+            memcpy(g_tui->input, "gemini", LEN);
+            tui_cursor_move(
+                (int)min(1 + g_tui->input_prompt_len, g_tui->w),
+                g_tui->h);
+            tui_say("gemini");
+
+            // Move back to old position
+            tui_cursor_move(x_pos, g_tui->h);
+            return 0;
+        }
+        if (g_tui->input_len >= LEN_P &&
+            strncmp(g_tui->input, "gemini://", LEN_P) == 0)
+        {
+            // Change the protocol to gopher
+            memcpy(g_tui->input, "gopher", LEN);
+            tui_cursor_move(
+                (int)min(1 + g_tui->input_prompt_len, g_tui->w),
+                g_tui->h);
+            tui_say("gopher");
+
+            // Move back to old position
+            tui_cursor_move(x_pos, g_tui->h);
+            return 0;
+        }
+    } return 0;
 
     /* Return key; end of input */
     case '\n':
@@ -464,7 +543,6 @@ tui_handle_mode_input(char buf)
 
     /* Backspace key; move caret backward */
     case 0x7f:
-    backspace:
         if (g_tui->input_caret <= 0)
         {
             // Can't backspace any further

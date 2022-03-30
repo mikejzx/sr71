@@ -5,6 +5,8 @@
 #include "typesetter.h"
 #include "uri.h"
 
+struct cached_item;
+
 struct pager_buffer_line
 {
     // Pointer to where in buffer line begins
@@ -93,6 +95,9 @@ struct pager_state
     // the moment to prevent any crazy issues.  If people seriously need to use
     // symbols as their registers then perhaps we could add them in?
     int marks['9' - '0' + 'Z' - 'A' +  'z' - 'a'];
+
+    // If the buffer is from the cache; this is a pointer to the item itself
+    struct cached_item *cached_page;
 };
 
 extern struct pager_state *g_pager;

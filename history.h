@@ -12,13 +12,6 @@ struct history_item
 
     // URI the item points to
     struct uri uri;
-
-    // The last-selected link on this page (used for restoring it when
-    // navigating through history)
-    int last_sel;
-
-    // Last scroll position on the page
-    int last_scroll;
 };
 
 /*
@@ -43,7 +36,7 @@ extern struct history_stack *g_hist;
 
 void history_init(void);
 void history_deinit(void);
-void history_push(struct uri *, int, int);
+void history_push(struct uri *);
 const struct history_item *const history_pop(void);
 const struct history_item *const history_next(void);
 

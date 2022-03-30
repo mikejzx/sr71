@@ -6,6 +6,7 @@
 #define URI_HOSTNAME_MAX 256
 #define URI_PATH_MAX 512
 #define PROTOCOL_NAME_MAX 16
+#define URI_STRING_MAX (URI_HOSTNAME_MAX + URI_PATH_MAX + PROTOCOL_NAME_MAX + 7)
 
 enum uri_protocol
 {

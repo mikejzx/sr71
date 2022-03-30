@@ -879,6 +879,10 @@ typeset_gophermap(
         // Directory
         case '1':
             uri.gopher_item = GOPHER_ITEM_DIR;
+            if (item_path[item_path_len] != '/')
+            {
+                strncat(uri.path, "/", URI_PATH_MAX);
+            }
             ADD_LINK();
             LINE_PRINTF(" [%d dir] ", (int)l_index);
             break;
