@@ -22,13 +22,21 @@ struct state
     // Raw buffer which data is received into
     struct recv_buffer
     {
+        // This is the main content buffer used for receiving new data
         char *b;
 
-        // Size of content in the buffer
-        size_t size;
-
-        // Maximum size of content until realloc needed
+        // Maximum size of content until realloc of our buffer is needed
         size_t capacity;
+
+        // This is a pointer to an "alternative" buffer.  This can point to
+        // memory that is NOT owned by this actual struct.  If this is not
+        // null, this will be the buffer that is used.
+        // E.g. often used to point to cached item's buffers, as there's no
+        //      need to memcpy their contents into the actual recv buffer
+        const char *b_alt;
+
+        // Size of whatever content is in either buffer
+        size_t size;
 
         // Buffer MIME type
         struct mime mime;

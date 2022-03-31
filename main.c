@@ -21,6 +21,7 @@ main(int argc, char **argv)
     g_recv->capacity = 4096;
     g_recv->b = malloc(g_recv->capacity);
     g_recv->size = 0;
+    g_recv->b_alt = NULL;
 
     history_init();
 

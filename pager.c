@@ -306,6 +306,12 @@ pager_paint(bool full)
                 moved = true;
             }
 
+            line->len = min(line->len,
+                g_pager->visible_buffer.w -
+                g_pager->margin.l -
+                g_pager->margin.r);
+            line->bytes = utf8_size_w_formats(line->s, line->len);
+
             tui_sayn(line->s, line->bytes);
 
             if (highlighted)

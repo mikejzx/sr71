@@ -34,7 +34,7 @@
  */
 
 // Indicate that we want to build with persistent disk caching enabled
-#define CACHE_USE_DISK
+#define CACHE_USE_DISK 1
 
 #define CACHE_ITEM_CAPACITY_INITIAL (128)
 
@@ -47,7 +47,7 @@ struct cached_item
     // The URI of the cached item
     struct uri uri;
 
-#ifdef CACHE_USE_DISK
+#if CACHE_USE_DISK
     // A string of the URI, so we don't have to keep re-writing it (only used
     // for disk cache at the moment)
     char uristr[URI_STRING_MAX];

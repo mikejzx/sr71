@@ -152,7 +152,7 @@ utf8_size_w_formats(const char *s, size_t l)
 {
     bool is_escape = false;
     int bytes = 0;
-    for (size_t count = 0; count < l && *s; ++bytes, ++s)
+    for (size_t count = 0; count <= l && *s; ++bytes, ++s)
     {
         if (is_escape && *s != 'm')
         {
@@ -172,7 +172,7 @@ utf8_size_w_formats(const char *s, size_t l)
 
         count += (*s & 0xC0) != 0x80;
     }
-    return bytes;
+    return max(bytes - 1, 0);
 }
 
 /* Connect a socket to a host address */

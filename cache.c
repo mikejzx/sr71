@@ -7,7 +7,7 @@
 
 static struct cache s_cache;
 
-#ifdef CACHE_USE_DISK
+#if CACHE_USE_DISK
 static const char
     *PATH_META = CACHE_PATH "/meta.dir",
     // Can't put on /tmp or else we get EXDEV errno
@@ -67,9 +67,77 @@ cache_gen_filepath(
     // filename
     if (path[len - 1] == '/')
     {
-        strncat(path, "index", path_size);
+        strncat(path, "index", path_size - len);
+    }
+    else
+    {
+        // Check if this resource name is already used by a directory; if so
+        // then this needs to become an 'index' file.
+        static struct stat path_stat;
+        if (stat(path, &path_stat) < 0)
+        {
+            // Path doesn't exist; all fine
+            return;
+        }
+        if (path_stat.st_mode & S_IFDIR)
+        {
+            // Make the path an index file
+            strncat(path, "/index", path_size - len);
+        }
     }
 }
+
+/*
+ * Attempts to convert a on-disk cache file to a directory which can store
+ * other cache files.
+ *
+ * This is useful in cases where we cache an item and wrongly assume it's not
+ * the index of a directory.
+ *  e.g. applied situation:
+ *  + We visit gemini.circumlunar.space/docs, and hence create a cache file
+ *    called 'docs' (technically doesn't happen here as the site redirects to
+ *   'docs/', but we assume the server doesn't perform the redirect.
+ *  + Then we visit gemini.circumlunar.space/docs/faq.gmi, and are now unable
+ *    to cache the page faq.gmi because the on-disk 'docs' is not a directory
+ *  + We attempt to remedy the issue by calling this function, which will
+ *    rename the 'docs' file to 'index' under a newly-created 'docs/' directory
+ * The function returns false if it fails to make the directory, and true on
+ * success or if no action needed to be taken
+ */
+static bool
+cache_file_to_dir(const char *fpath)
+{
+    // Check if the given path indeed exists on disk as a file
+    static struct stat fpath_stat;
+    if (stat(fpath, &fpath_stat) < 0)
+    {
+        // No such file on disk
+        return false;
+    }
+    if (fpath_stat.st_mode & S_IFDIR)
+    {
+        // Path is already a directory; we don't need to do anything
+        return true;
+    }
+
+    // Generate a path to temporarily move the file
+    char path_tmp[] = CACHE_PATH "/tmp.XXXXXX",
+         path_index[FILENAME_MAX];
+    if (mkstemp(path_tmp) == -1) return false;
+
+    // Rename file to a temporary file name
+    if (rename(fpath, path_tmp) != 0) return false;
+
+    // Make a directory where the file was
+    if (mkdir(fpath, DIR_PERMS) != 0) return false;
+
+    // Move the file to the new directory
+    snprintf(path_index, sizeof(path_index), "%s/index", fpath);
+    if (rename(path_tmp, path_index) != 0) return false;
+
+    return true;
+}
+
 #endif // CACHE_USE_DISK
 
 static struct cached_item *cache_get_next_item(void);
@@ -85,7 +153,7 @@ cache_init(void)
     s_cache.total_size = 0;
 
     // If cache directory on disk doesn't exist, create it
-#ifdef CACHE_USE_DISK
+#if CACHE_USE_DISK
     if (access(CACHE_PATH, F_OK) != 0 &&
         // Create with RW for owner and group
         mkdir(CACHE_PATH, DIR_PERMS) != 0)
@@ -105,7 +173,7 @@ void
 cache_deinit(void)
 {
     int i;
-#ifdef CACHE_USE_DISK
+#if CACHE_USE_DISK
     /*
      * Flush whatever cache is left in memory to the disk
      */
@@ -131,19 +199,27 @@ cache_deinit(void)
             if (*x != '/') continue;
             *x = '\0';
 
+            // Check if the path exists
             if (access(path, F_OK) != 0)
             {
-                // Make the directory
+                // Directory doesn't exist; so create it
                 if (mkdir(path, DIR_PERMS) != 0)
                 {
                     // Give up
                     goto fail;
                 }
-
-                // TODO: if this directory already exists, but as a file, then
-                // we should move the file to an 'index' inside the
-                // newly-created directory
             }
+            else
+            {
+                // The path exists, so we ensure it is indeed a *directory* and
+                // not an already-stored file
+                if (!cache_file_to_dir(path))
+                {
+                    // Give up
+                    goto fail;
+                }
+            }
+
             *x = '/';
         }
 
@@ -253,23 +329,25 @@ cache_find(
     const struct uri *restrict const uri,
     struct cached_item **restrict const o)
 {
+    g_recv->b_alt = NULL;
+
     // See if we have the URI cached in memory already
     for (int i = 0; i < s_cache.count; ++i)
     {
         struct cached_item *item = &s_cache.items[i];
-        if (uri_cmp(&item->uri, uri) != 0) continue;
+        if (uri_cmp_notrailing(&item->uri, uri) != 0) continue;
 
-        // Page is cached; load it into the recv buffer.
-        recv_buffer_check_size(item->data_size);
+        // Page is cached; set it as the alternative recv buffer (instead of
+        // memcpy'ing directly into the recv buffer)
         g_recv->size = item->data_size;
-        memcpy(g_recv->b, item->data, g_recv->size);
+        g_recv->b_alt = item->data;
         g_recv->mime = item->mime;
 
         *o = item;
         return true;
     }
 
-#ifdef CACHE_USE_DISK
+#if CACHE_USE_DISK
     // Search the on-disk cache
     static char path[FILENAME_MAX];
     FILE *fp;
@@ -287,7 +365,7 @@ cache_find(
         uri,
         uri_string,
         sizeof(uri_string),
-        URI_FLAGS_NO_PORT_BIT);
+        URI_FLAGS_NO_PORT_BIT | URI_FLAGS_NO_TRAILING_SLASH_BIT);
 
     /* Read the metadata file */
     if (!(fp = fopen(PATH_META, "r")))
@@ -391,9 +469,8 @@ cache_find(
     if (!success) goto fail;
 
     // Copy to the actual pager buffer
-    recv_buffer_check_size(item.data_size);
     g_recv->size = item.data_size;
-    memcpy(g_recv->b, item.data, item.data_size);
+    g_recv->b_alt = item.data;
     g_recv->mime = item.mime;
 
     struct cached_item *item_real = cache_get_next_item();
@@ -405,7 +482,7 @@ cache_find(
     *item_real = item;
     *o = item_real;
     return true;
-#endif
+#endif // CACHE_USE_DISK
 
 fail:
     g_recv->size = 0;
@@ -422,7 +499,7 @@ cache_push_current(void)
     for (int i = 0; i < s_cache.count; ++i)
     {
         struct cached_item *m = &s_cache.items[i];
-        if (uri_cmp(&m->uri, &g_state->uri) != 0) continue;
+        if (uri_cmp_notrailing(&m->uri, &g_state->uri) != 0) continue;
 
         item = m;
         s_cache.total_size -= m->data_size;
@@ -451,13 +528,13 @@ cache_push_current(void)
     item->session.last_scroll = 0;
     memcpy(item->data, g_recv->b, item->data_size);
 
-#ifdef CACHE_USE_DISK
+#if CACHE_USE_DISK
     // Write URI string
     item->uristr_len = uri_str(
         &item->uri,
         item->uristr,
         sizeof(item->uristr),
-        URI_FLAGS_NO_PORT_BIT);
+        URI_FLAGS_NO_PORT_BIT | URI_FLAGS_NO_TRAILING_SLASH_BIT);
 
     // Generate a SHA256 hash of the content.  The algorithm used shouldn't
     // matter too much, as it's literally only used to detect changes in file
@@ -468,7 +545,7 @@ cache_push_current(void)
     EVP_DigestUpdate(ctx, item->data, item->data_size);
     EVP_DigestFinal_ex(ctx, item->hash, &item->hash_len);
     EVP_MD_CTX_free(ctx);
-#endif
+#endif // CACHE_USE_DISK
 
     s_cache.total_size += item->data_size;
 

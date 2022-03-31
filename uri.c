@@ -120,25 +120,33 @@ uri_str(
         strcat(scheme, "://");
     }
 
+    int path_len = strlen(uri->path);
+    if (flags & URI_FLAGS_NO_TRAILING_SLASH_BIT &&
+        uri->path[path_len - 1] == '/')
+    {
+        path_len = max(path_len - 1, 0);
+    }
+
     const char *fmt;
     if (!uri->port ||
         flags & URI_FLAGS_NO_PORT_BIT)
     {
         fmt = "%s" // Scheme
             "%s"   // Hostname
-            "%s";  // Path
+            "%.*s";  // Path
         if (flags & URI_FLAGS_FANCY_BIT)
         {
             // Fancy mode escapes
             fmt = "\x1b[2m%s\x1b[0m"
                 "%s"
-                "\x1b[2m%s\x1b[0m";
+                "\x1b[2m%.*s\x1b[0m";
         }
 
         // Print without port
         return snprintf(buf, buf_size, fmt,
             scheme,
             uri->hostname,
+            path_len,
             uri->path);
     }
     else
@@ -146,14 +154,14 @@ uri_str(
         fmt = "%s" // Scheme
             "%s"   // Hostname
             ":%d"  // Port
-            "%s";  // Path
+            "%.*s";  // Path
         if (flags & URI_FLAGS_FANCY_BIT)
         {
             // Fancy mode escapes
             fmt = "\x1b[2m%s\x1b[0m"
                 "%s"
                 ":%d"
-                "\x1b[2m%s\x1b[0m";
+                "\x1b[2m%.*s\x1b[0m";
         }
 
         // Print with port
@@ -162,6 +170,7 @@ uri_str(
             scheme,
             uri->hostname,
             uri->port,
+            path_len,
             uri->path);
     }
 }

@@ -296,6 +296,7 @@ tui_go_to_uri(
         {
             sel = -1;
             scroll = 0;
+            g_recv->b_alt = NULL;
         }
 
         // Update the pager

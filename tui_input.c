@@ -363,7 +363,7 @@ tui_handle_mode_normal(char buf)
     // 'r' refresh page
     case 'r':
     {
-    #ifdef CACHE_USE_DISK
+    #if CACHE_USE_DISK
         // Copy the old hash
         unsigned char old_hash[EVP_MAX_MD_SIZE];
         unsigned old_hash_len = 0;

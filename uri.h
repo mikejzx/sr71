@@ -67,6 +67,9 @@ enum uri_string_flags
 
     // Do not include protocol in string
     URI_FLAGS_NO_PROTOCOL_BIT = 4,
+
+    // Do not include any trailing slash in the string
+    URI_FLAGS_NO_TRAILING_SLASH_BIT = 8,
 };
 
 struct uri
@@ -103,6 +106,23 @@ uri_cmp(
     return (
         strncmp(a->hostname, b->hostname, URI_HOSTNAME_MAX) == 0 &&
         strncmp(a->path, b->path, URI_PATH_MAX) == 0 &&
+        a->protocol == b->protocol) ? 0 : -1;
+}
+
+/* Compare URIs and ignore trailing slash */
+static inline int
+uri_cmp_notrailing(
+    const struct uri *restrict const a,
+    const struct uri *restrict const b)
+{
+    size_t len_a = strlen(a->path), len_b = strlen(b->path);
+    if (a->path[len_a - 1] == '/') --len_a;
+    if (b->path[len_b - 1] == '/') --len_b;
+
+    return (
+        len_a == len_b &&
+        strncmp(a->hostname, b->hostname, URI_HOSTNAME_MAX) == 0 &&
+        strncmp(a->path, b->path, len_a) == 0 &&
         a->protocol == b->protocol) ? 0 : -1;
 }
 

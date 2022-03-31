@@ -16,12 +16,15 @@ typesetter_init(struct typesetter *t)
 void
 typesetter_reinit(struct typesetter *t)
 {
+    // Select the buffer (use alt if available)
+    const char *rawbuf = g_recv->b_alt ? g_recv->b_alt : g_recv->b;
+
     // Count lines
     size_t old_line_count = t->raw_line_count;
     t->raw_line_count = 0;
     for (int i = 0; i < g_recv->size; ++i)
     {
-        if (g_recv->b[i] == '\n' || i == g_recv->size - 1) ++t->raw_line_count;
+        if (rawbuf[i] == '\n' || i == g_recv->size - 1) ++t->raw_line_count;
     }
 
     // Allocate for lines
@@ -41,12 +44,12 @@ typesetter_reinit(struct typesetter *t)
     int l = 0, l_prev = -1;
     for (int i = 0; i < g_recv->size; ++i)
     {
-        if (g_recv->b[i] != '\n' && i != g_recv->size - 1) continue;
+        if (rawbuf[i] != '\n' && i != g_recv->size - 1) continue;
 
-        t->raw_lines[l].s = &g_recv->b[l_prev + 1];
-        t->raw_lines[l].bytes = i - l_prev - (int)(g_recv->b[i] == '\n');
+        t->raw_lines[l].s = &rawbuf[l_prev + 1];
+        t->raw_lines[l].bytes = i - l_prev - (int)(rawbuf[i] == '\n');
 
-        if (i > 0 && g_recv->b[i - 1] == '\r')
+        if (i > 0 && rawbuf[i - 1] == '\r')
         {
             // Get rid of carriage-returns; this also fixes clearing with the
             // pager
@@ -54,7 +57,7 @@ typesetter_reinit(struct typesetter *t)
         }
 
         t->raw_lines[l].len = utf8_strnlen_w_formats(
-            &g_recv->b[l_prev + 1],
+            &rawbuf[l_prev + 1],
             t->raw_lines[l].bytes);
 
         l_prev = i;
@@ -562,7 +565,7 @@ typeset_gemtext(
         int chars_this_column =
             utf8_strnlen_w_formats(line->s, buffer_pos - line->s);
         for (const char *c = c_prev;
-            c <= rawline_end;
+            c <= rawline_end && *c;
             ++c)
         {
             // Set the most recent escape code to print at beginning of next line
@@ -879,9 +882,10 @@ typeset_gophermap(
         // Directory
         case '1':
             uri.gopher_item = GOPHER_ITEM_DIR;
-            if (item_path[item_path_len] != '/')
+            if (item_path[item_path_len] != '/' &&
+                item_path_len + 1 < URI_PATH_MAX)
             {
-                strncat(uri.path, "/", URI_PATH_MAX);
+                strcat(uri.path, "/");
             }
             ADD_LINK();
             LINE_PRINTF(" [%d dir] ", (int)l_index);
