@@ -47,14 +47,12 @@ typesetter_reinit(struct typesetter *t)
         if (rawbuf[i] != '\n' && i != g_recv->size - 1) continue;
 
         t->raw_lines[l].s = &rawbuf[l_prev + 1];
-        t->raw_lines[l].bytes = i - l_prev - (int)(rawbuf[i] == '\n');
+        t->raw_lines[l].bytes = i - l_prev;
 
-        if (i > 0 && rawbuf[i - 1] == '\r')
-        {
-            // Get rid of carriage-returns; this also fixes clearing with the
-            // pager
-            --t->raw_lines[l].bytes;
-        }
+        // Strip carriage returns and linefeeds
+        for (const char *j = &rawbuf[i];
+            j >= t->raw_lines[l].s && (*j == '\r' || *j == '\n');
+            --j, --t->raw_lines[l].bytes);
 
         t->raw_lines[l].len = utf8_strnlen_w_formats(
             &rawbuf[l_prev + 1],
@@ -360,7 +358,7 @@ typeset_gemtext(
             gemtext.esc = buffer_pos;
             const char *HEADING1_ESC = "\x1b[1;36m";
             LINE_STRNCPY_LIT(HEADING1_ESC);
-            gemtext.esc_len = strlen(HEADING1_ESC);
+            gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 2;
             gemtext.need_clear_esc = true;
             break;
@@ -369,7 +367,7 @@ typeset_gemtext(
             gemtext.esc = buffer_pos;
             const char *HEADING2_ESC = "\x1b[36m";
             LINE_STRNCPY_LIT(HEADING2_ESC);
-            gemtext.esc_len = strlen(HEADING1_ESC);
+            gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 3;
             gemtext.need_clear_esc = true;
             break;
@@ -378,7 +376,7 @@ typeset_gemtext(
             gemtext.esc = buffer_pos;
             const char *HEADING3_ESC = "\x1b[1m";
             LINE_STRNCPY_LIT(HEADING3_ESC);
-            gemtext.esc_len = strlen(HEADING1_ESC);
+            gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 4;
             gemtext.need_clear_esc = true;
             break;
@@ -391,7 +389,7 @@ typeset_gemtext(
             // This makes e.g. documents with numbered sections look really
             // nice
             for (const char *i = rawline->s + heading_level + 1;
-                i < rawline_end && *i;
+                i <= rawline_end && *i;
                 ++i)
             {
                 if (*i == '\n' ||
@@ -403,9 +401,12 @@ typeset_gemtext(
                 if (*i == ' ' ||
                     *i == '\t')
                 {
+                    for (;
+                        *i && (*i == ' ' || *i == '\t') && i <= rawline_end;
+                        ++i);
                     gemtext.hang = utf8_strnlen_w_formats(
-                        rawline->s + heading_level,
-                        i - rawline->s + heading_level);
+                        rawline->s + heading_level + 1,
+                        i - (rawline->s + heading_level + 1));
                     break;
                 }
             }
@@ -500,6 +501,7 @@ typeset_gemtext(
                 LINE_PRINTF(" [%s] ", l_index_str);
                 gemtext.hang += LINE_PRINTF_N_BYTES;
             }
+            gemtext.indent = 0;
 
             // Alternative alphabetic list index, so you don't need to reach up
             // to the number row to select links
@@ -568,7 +570,8 @@ typeset_gemtext(
             c <= rawline_end && *c;
             ++c)
         {
-            // Set the most recent escape code to print at beginning of next line
+            // Set the most recent escape code to print at beginning of next
+            // line
             if (*c == '\x1b')
             {
                 const char *esc_start = c;
@@ -909,10 +912,10 @@ typeset_gophermap(
         }
 
         // Write display string
-        LINE_STRNCPY(item_display, item_display_len);
+        LINE_STRNCPY(item_display, item_display_len + 1);
 
         // Finish line
-        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
+        line->len = utf8_strnlen_w_formats(line->s, line->bytes) - 1;
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
             b->lines_capacity)
         {

@@ -365,7 +365,9 @@ cache_find(
         uri,
         uri_string,
         sizeof(uri_string),
-        URI_FLAGS_NO_PORT_BIT | URI_FLAGS_NO_TRAILING_SLASH_BIT);
+        URI_FLAGS_NO_PORT_BIT |
+            URI_FLAGS_NO_TRAILING_SLASH_BIT |
+            URI_FLAGS_NO_GOPHER_ITEM_BIT);
 
     /* Read the metadata file */
     if (!(fp = fopen(PATH_META, "r")))
@@ -534,7 +536,9 @@ cache_push_current(void)
         &item->uri,
         item->uristr,
         sizeof(item->uristr),
-        URI_FLAGS_NO_PORT_BIT | URI_FLAGS_NO_TRAILING_SLASH_BIT);
+        URI_FLAGS_NO_PORT_BIT |
+            URI_FLAGS_NO_TRAILING_SLASH_BIT |
+            URI_FLAGS_NO_GOPHER_ITEM_BIT);
 
     // Generate a SHA256 hash of the content.  The algorithm used shouldn't
     // matter too much, as it's literally only used to detect changes in file

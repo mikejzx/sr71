@@ -162,6 +162,7 @@ main(int argc, char **argv)
         "=> gopher://gopher.quux.org:70/\n"
         "=> gopher://gopher.quix.us:70/\n"
         "=> gopher://gopher.floodgap.com Floodgap\n"
+        "=> gopher://1436.ninja/0/Phlog/20190831.post This gopherhole is brokn\n"
         "=> file:///home/mike/pages/gemtext/gemini.circumlunar.space/home.gmi Local file test\n"
         "=> file:///home/mike/ Local directory test\n"
         "=> gemini://example.com/ A link with a very long name that will wrap around and hopefully work properly\n"

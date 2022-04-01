@@ -154,6 +154,8 @@ gemini_request(struct uri *uri)
     tui_printf("Server responded: %s", response_header);
     tui_status_end();
 
+    if (response_header[0] != '3') gem->redirects = 0;
+
     // Interpret response code
     switch(response_header[0])
     {
@@ -214,10 +216,20 @@ gemini_request(struct uri *uri)
                 // TODO: warn about cross-protocol redirects
             }
 
-            // TODO: don't follow more than N (5) consecutive redirects
-
             // Resolve URI in case it is relative
             uri_abs(&g_state->uri, &redirect_uri);
+
+            // Refuse to follow too many consecutive redirects
+            ++gem->redirects;
+            if (gem->redirects > GEMINI_MAX_CONSECUTIVE_REDIRECTS)
+            {
+                // TODO: prompt user if they wish to follow redirect
+                tui_status_begin();
+                tui_printf("Redirect limit reached");
+                tui_status_end();
+                gem->redirects = 0;
+                goto fail;
+            }
 
             // Perform redirect
             tui_status_begin();

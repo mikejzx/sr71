@@ -1,7 +1,7 @@
 #ifndef MIME_H
 #define MIME_H
 
-#define MIME_TYPE_MAX 128
+#define MIME_TYPE_MAX 64
 
 #define MIME_GEMTEXT "text/gemini"
 #define MIME_GOPHERMAP "text/gophermap"

@@ -274,11 +274,6 @@ tui_go_to_uri(
         // Update current URI state
         memcpy(&g_state->uri, uri_in, sizeof(struct uri));
 
-        if (push_hist)
-        {
-            history_push(&g_state->uri);
-        }
-
         // Push the page to the cache
         if (do_cache) { g_pager->cached_page = cache_push_current(); }
         else g_pager->cached_page = NULL;
@@ -291,12 +286,25 @@ tui_go_to_uri(
             sel = cache_item->session.last_sel;
             scroll = cache_item->session.last_scroll;
             g_pager->cached_page = cache_item;
+
+            // Update gopher item type from cache
+            if (uri.protocol == PROTOCOL_GOPHER)
+            {
+                g_state->uri.gopher_item =
+                    gopher_mime_to_item(&cache_item->mime);
+            }
         }
         else
         {
             sel = -1;
             scroll = 0;
             g_recv->b_alt = NULL;
+        }
+
+        // Push to undo/redo history
+        if (push_hist)
+        {
+            history_push(&g_state->uri);
         }
 
         // Update the pager

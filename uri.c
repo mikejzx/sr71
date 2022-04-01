@@ -62,10 +62,31 @@ uri_parse(const char *uri, size_t uri_len)
             uri + start_pos, (size_t)colon_pos - start_pos);
     }
 
+    // Gopher-specific: it is common these days to prefix paths with the
+    //                  resource item type,
+    //                    e.g. gopher://foo.bar/0/a_text_file.txt
+    //                  so we have to accomodate for this for some links to
+    //                  work correctly
+    int path_len = max(uri_len - path_pos, 0);
+    if (result.protocol == PROTOCOL_GOPHER)
+    {
+        enum gopher_item_type item = GOPHER_ITEM_UNSUPPORTED;
+        if (path_len >= 3 &&
+            uri[path_pos] == '/' &&
+            (item = gopher_item_lookup(uri[path_pos + 1]))
+                != GOPHER_ITEM_UNSUPPORTED &&
+            uri[path_pos + 2] == '/')
+        {
+            path_pos += 2;
+            path_len -= 2;
+        }
+        result.gopher_item = item;
+    }
+
     // Get path
     if (path_pos < uri_len)
     {
-        strncpy(result.path, uri + path_pos, uri_len - path_pos);
+        strncpy(result.path, uri + path_pos, path_len);
     }
     else
     {
@@ -127,17 +148,52 @@ uri_str(
         path_len = max(path_len - 1, 0);
     }
 
+    // Apply gopher item prefix
+    char gopher_item_prefix[12];
+    if (uri->protocol == PROTOCOL_GOPHER &&
+        !(flags & URI_FLAGS_NO_GOPHER_ITEM_BIT) &&
+        uri->gopher_item != GOPHER_ITEM_UNSUPPORTED)
+    {
+        if (flags & URI_FLAGS_FANCY_BIT)
+        {
+            gopher_item_prefix[0]  = '/';
+            gopher_item_prefix[1]  = '\x1b';
+            gopher_item_prefix[2]  = '[';
+            gopher_item_prefix[3]  = '3';
+            gopher_item_prefix[4]  = '3';
+            gopher_item_prefix[5]  = 'm';
+            gopher_item_prefix[6]  = GOPHER_ITEM_IDS[uri->gopher_item];
+            gopher_item_prefix[7]  = '\x1b';
+            gopher_item_prefix[8]  = '[';
+            gopher_item_prefix[9]  = '0';
+            gopher_item_prefix[10] = 'm';
+            gopher_item_prefix[11] = '\0';
+        }
+        else
+        {
+            gopher_item_prefix[0]  = '/';
+            gopher_item_prefix[1]  = GOPHER_ITEM_IDS[uri->gopher_item];
+            gopher_item_prefix[2]  = '\0';
+        }
+    }
+    else
+    {
+        gopher_item_prefix[0] = '\0';
+    }
+
     const char *fmt;
     if (!uri->port ||
         flags & URI_FLAGS_NO_PORT_BIT)
     {
-        fmt = "%s" // Scheme
-            "%s"   // Hostname
+        fmt = "%s"   // Scheme
+            "%s"     // Hostname
+            "%s"     // Gopher item prefix
             "%.*s";  // Path
         if (flags & URI_FLAGS_FANCY_BIT)
         {
             // Fancy mode escapes
             fmt = "\x1b[2m%s\x1b[0m"
+                "%s"
                 "%s"
                 "\x1b[2m%.*s\x1b[0m";
         }
@@ -146,14 +202,16 @@ uri_str(
         return snprintf(buf, buf_size, fmt,
             scheme,
             uri->hostname,
+            gopher_item_prefix,
             path_len,
             uri->path);
     }
     else
     {
-        fmt = "%s" // Scheme
-            "%s"   // Hostname
-            ":%d"  // Port
+        fmt = "%s"   // Scheme
+            "%s"     // Hostname
+            ":%d"    // Port
+            "%s"     // Gopher item prefix
             "%.*s";  // Path
         if (flags & URI_FLAGS_FANCY_BIT)
         {
@@ -161,6 +219,7 @@ uri_str(
             fmt = "\x1b[2m%s\x1b[0m"
                 "%s"
                 ":%d"
+                "%s"
                 "\x1b[2m%.*s\x1b[0m";
         }
 
@@ -170,6 +229,7 @@ uri_str(
             scheme,
             uri->hostname,
             uri->port,
+            gopher_item_prefix,
             path_len,
             uri->path);
     }
@@ -183,7 +243,6 @@ uri_abs(struct uri *restrict base, struct uri *restrict rel)
         rel->hostname[0] != '\0')
     {
         // Not relative
-        // TODO: make sure this is actually what defines a relative URI
         return;
     }
 

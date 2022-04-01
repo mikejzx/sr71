@@ -3,7 +3,7 @@
 #include "state.h"
 #include "typesetter.h"
 
-static const int CONTENT_WIDTH_PREFERRED = 80;
+static const int CONTENT_WIDTH_PREFERRED = 70;
 
 struct pager_state *g_pager;
 
@@ -310,6 +310,7 @@ pager_paint(bool full)
                 g_pager->visible_buffer.w -
                 g_pager->margin.l -
                 g_pager->margin.r);
+            //line->bytes = max(utf8_size_w_formats(line->s, line->len) - 1, 0);
             line->bytes = utf8_size_w_formats(line->s, line->len);
 
             tui_sayn(line->s, line->bytes);
@@ -333,9 +334,10 @@ pager_paint(bool full)
         #define CLEAR_VI_STYLE
         #ifdef CLEAR_VI_STYLE
             // Because vi
-            tui_say("~");
-            line->bytes = 1;
-            line->len = 1;
+            static const char *EMPTY_CHAR = "\x1b[2m~\x1b[0m";
+            line->bytes = strlen(EMPTY_CHAR);
+            line->len = utf8_strnlen_w_formats(EMPTY_CHAR, line->bytes);
+            tui_sayn(EMPTY_CHAR, line->bytes);
         #else
             line->bytes = 0;
             line->len = 0;

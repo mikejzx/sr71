@@ -99,6 +99,8 @@ path_normalise(
 size_t
 utf8_strlen(const char *s)
 {
+    if (!s) return 0;
+
     size_t count = 0;
     for (; *s; count += (*s++ & 0xC0) != 0x80);
     return count;
@@ -108,6 +110,8 @@ utf8_strlen(const char *s)
 size_t
 utf8_strnlen(const char *s, size_t n)
 {
+    if (!s || !n) return 0;
+
     size_t count = 0;
     for (int x = 0;
         *s && x < n;
@@ -119,9 +123,11 @@ utf8_strnlen(const char *s, size_t n)
 size_t
 utf8_strnlen_w_formats(const char *s, size_t n)
 {
+    if (!s || !n) return 0;
+
     size_t count = 0;
     bool is_escape = false;
-    for (int x = 0; x < n && *s; ++x, ++s)
+    for (int x = 0; *s && x < n; ++x, ++s)
     {
         if (is_escape && *s != 'm')
         {
@@ -150,9 +156,11 @@ utf8_strnlen_w_formats(const char *s, size_t n)
 size_t
 utf8_size_w_formats(const char *s, size_t l)
 {
+    if (!s || !l) return 0;
+
     bool is_escape = false;
     int bytes = 0;
-    for (size_t count = 0; count <= l && *s; ++bytes, ++s)
+    for (size_t count = 0; *s && count <= l; ++bytes, ++s)
     {
         if (is_escape && *s != 'm')
         {
@@ -172,6 +180,7 @@ utf8_size_w_formats(const char *s, size_t l)
 
         count += (*s & 0xC0) != 0x80;
     }
+    //return bytes;
     return max(bytes - 1, 0);
 }
 

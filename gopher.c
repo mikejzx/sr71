@@ -63,21 +63,10 @@ gopher_request(struct uri *uri)
     }
     g_recv->size = recv_bytes;
 
-    // Get MIME
-    switch (uri->gopher_item)
-    {
-    default:
-    case GOPHER_ITEM_UNSUPPORTED:
-        // Unknown MIME
-        // TODO mailcap
-    case GOPHER_ITEM_TEXT:
-    case GOPHER_ITEM_BIN:
-        mime_parse(&g_recv->mime, MIME_PLAINTEXT, strlen(MIME_PLAINTEXT));
-        break;
-    case GOPHER_ITEM_DIR:
-        mime_parse(&g_recv->mime, MIME_GOPHERMAP, strlen(MIME_GOPHERMAP));
-        break;
-    }
+    // Get MIME type
+    mime_parse(
+        &g_recv->mime,
+        gopher_item_to_mime(uri->gopher_item), MIME_TYPE_MAX);
 
 fail:
     close(ph->sock);

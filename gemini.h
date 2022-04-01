@@ -9,11 +9,16 @@ struct uri;
  * Gemini client code
  */
 
+#define GEMINI_MAX_CONSECUTIVE_REDIRECTS 5
+
 struct gemini
 {
     SSL *ssl;
     SSL_CTX *ctx;
     int sock;
+
+    // Consecutive redirect count
+    int redirects;
 };
 
 void gemini_init(void);

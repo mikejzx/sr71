@@ -54,7 +54,9 @@ status_line_paint(void)
         case STATUS_LINE_COMPONENT_RIGHT:
         {
             int scroll_percent = (int)ceil(100.0 *
-                g_pager->scroll / ((int)max(g_pager->buffer.line_count, 2) - 1));
+                g_pager->scroll /
+                ((int)max(g_pager->buffer.line_count, 2) - 1));
+            scroll_percent = max(scroll_percent, 0);
             switch (scroll_percent)
             {
             case 0:

@@ -70,6 +70,9 @@ enum uri_string_flags
 
     // Do not include any trailing slash in the string
     URI_FLAGS_NO_TRAILING_SLASH_BIT = 8,
+
+    // Do not include Gopher item type on Gopher URIs
+    URI_FLAGS_NO_GOPHER_ITEM_BIT = 16,
 };
 
 struct uri

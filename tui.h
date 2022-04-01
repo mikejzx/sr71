@@ -90,13 +90,19 @@ void tui_go_from_input(void);
 do \
 { \
     int size = (n); \
+    int l; \
     if (g_tui->is_writing_status && \
-        size > g_tui->w - g_tui->cursor_x) \
+        (l = utf8_strnlen_w_formats((x), size)) && \
+        g_tui->cursor_x + l >= g_tui->w) \
     { \
         /* Make sure status text doesn't overflow */ \
-        size = g_tui->w - g_tui->cursor_x; \
+        l = max(g_tui->w - g_tui->cursor_x - 1, 0); \
+        size = utf8_size_w_formats((x), l); \
+        if (size < 1) break;\
     } \
-    (void)!write(STDOUT_FILENO, (x), size); \
+    l = write(STDOUT_FILENO, (x), size); \
+    if (g_tui->is_writing_status) \
+        g_tui->cursor_x += utf8_strnlen_w_formats((x), l); \
 } while(0)
 
 #define tui_say(x) tui_sayn((x), sizeof((x)))
@@ -115,13 +121,19 @@ do \
 { \
     static char buf[256]; \
     int count = snprintf(buf, sizeof(buf), __VA_ARGS__); \
+    int l; \
     if (g_tui->is_writing_status && \
-        count > g_tui->w - g_tui->cursor_x) \
+        (l = utf8_strnlen_w_formats(buf, count)) && \
+        g_tui->cursor_x + l >= g_tui->w) \
     { \
         /* Make sure status text doesn't overflow */ \
-        count = g_tui->w - g_tui->cursor_x; \
+        l = max(g_tui->w - g_tui->cursor_x - 1, 0); \
+        count = utf8_size_w_formats(buf, l); \
+        if (count < 1) break; \
     } \
-    (void)!write(STDOUT_FILENO, buf, count); \
+    l = write(STDOUT_FILENO, buf, count); \
+    if (g_tui->is_writing_status) \
+        g_tui->cursor_x += utf8_strnlen_w_formats(buf, l); \
 } while(0)
 
 /* Print a size */
