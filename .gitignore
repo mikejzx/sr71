@@ -1,4 +1,5 @@
 gem
+frosty
 valgrind-out*
 *.d
 *.o

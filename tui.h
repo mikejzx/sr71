@@ -1,6 +1,8 @@
 #ifndef TUI_H
 #define TUI_H
 
+#include "tui_input.h"
+
 struct uri;
 
 /*
@@ -8,26 +10,6 @@ struct uri;
  *
  * Ncurses-free text interface management
  */
-
-enum tui_mode_id
-{
-    TUI_MODE_UNKNOWN = 0,
-
-    // Normal mode; scrolls around pager, etc.
-    TUI_MODE_NORMAL,
-
-    // User command input prompt
-    TUI_MODE_COMMAND,
-
-    // Input prompt
-    TUI_MODE_INPUT,
-
-    // Password prompt
-    TUI_MODE_PASSWORD,
-
-    // Special mode for following links (when pressing numbers on keyboard)
-    TUI_MODE_LINKS,
-};
 
 enum tui_invalidate_flags
 {
@@ -44,10 +26,6 @@ enum tui_invalidate_flags
     INVALIDATE_STATUS_LINE_BIT = 4,
 };
 
-// Max number of characters allowed in the input prompt
-#define TUI_INPUT_BUFFER_MAX 256
-#define TUI_INPUT_PROMPT_MAX 32
-
 struct tui_state
 {
     // Terminal width/height
@@ -56,14 +34,8 @@ struct tui_state
     int cursor_x, cursor_y;
     bool is_writing_status;
 
-    // Current input mode
-    enum tui_mode_id mode;
-
-    // For input prompts
-    char input[TUI_INPUT_BUFFER_MAX], input_prompt[TUI_INPUT_PROMPT_MAX];
-    size_t input_len;
-    size_t input_caret, input_prompt_len;
-    void (*cb_input_complete)(void);
+    // Input handler
+    struct tui_input in;
 };
 
 extern struct tui_state *g_tui;
@@ -75,14 +47,17 @@ void tui_resized(void);
 void tui_repaint(bool);
 void tui_invalidate(enum tui_invalidate_flags);
 int tui_go_to_uri(const struct uri *const, bool, bool);
+
 void tui_go_from_input(void);
+void tui_set_mark_from_input(void);
+void tui_goto_mark_from_input(void);
 
 /* Move cursor */
 #define tui_cursor_move(x, y) \
 { \
-    tui_printf("\x1b[%d;%dH", (y), (x)); \
-    g_tui->cursor_x = x; \
-    g_tui->cursor_y = y; \
+    tui_printf("\x1b[%d;%dH", (int)(y), (int)(x)); \
+    g_tui->cursor_x = (int)x; \
+    g_tui->cursor_y = (int)y; \
 }
 
 // Write text to the TUI
@@ -105,7 +80,7 @@ do \
         g_tui->cursor_x += utf8_strnlen_w_formats((x), l); \
 } while(0)
 
-#define tui_say(x) tui_sayn((x), sizeof((x)))
+#define tui_say(x) tui_sayn((x), strlen((x)))
 
 // Shorthand for writing simple text to status
 #define tui_status_say(x) \

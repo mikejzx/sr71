@@ -51,11 +51,7 @@ tui_init(void)
 
     tui_resized();
 
-    g_tui->mode = TUI_MODE_NORMAL;
-    g_tui->input_caret = 0;
-    g_tui->input_len = 0;
-    g_tui->input_prompt_len = 0;
-    g_tui->cb_input_complete = NULL;
+    tui_input_init();
 }
 
 void
@@ -88,11 +84,8 @@ tui_update(void)
             continue;
         }
 
-        for (int x = 0; x < read_n; ++x)
-        {
-            // TODO: properly handle the full read buffer
-            if (tui_handle_input(buf[x]) < 0) return -1;
-        }
+        // Handle input
+        if (tui_input_handle(buf, read_n) == TUI_QUIT) return -1;
     }
 
     return 0;
@@ -154,20 +147,47 @@ void
 tui_go_from_input(void)
 {
     // Parse the URI.
-    struct uri uri = uri_parse(g_tui->input, g_tui->input_len);
+    struct uri uri = uri_parse(g_in->buffer, g_in->buffer_len);
 
     // We need to make sure that there is a protocol or else the URI parse
     // will cause problems
     if (uri.protocol == PROTOCOL_NONE)
     {
         // Re-parse it with a 'gemini://' prefix
-        char tmp[g_tui->input_len + 1];
-        strncpy(tmp, g_tui->input, g_tui->input_len);
-        g_tui->input_len = snprintf(g_tui->input, TUI_INPUT_BUFFER_MAX,
+        char tmp[g_in->buffer_len + 1];
+        strncpy(tmp, g_in->buffer, g_in->buffer_len);
+        g_in->buffer_len = snprintf(g_in->buffer, TUI_INPUT_BUFFER_MAX,
             "gemini://%s", tmp);
-        uri = uri_parse(g_tui->input, g_tui->input_len);
+        uri = uri_parse(g_in->buffer, g_in->buffer_len);
     }
     tui_go_to_uri(&uri, true, false);
+}
+
+static inline int
+tui_get_register_index(const char c)
+{
+    if      (c <  '0') return 0;
+    else if (c <= '9') return c - '0';
+    else if (c <= 'Z') return c - 'A' + ('9' - '0' + 1);
+    else if (c <= 'z') return c - 'a' + ('Z' - 'A' + 1) + ('9' - '0' + 1);
+    else               return 0;
+}
+
+/* Set a mark at current pos to the register input buffer */
+void
+tui_set_mark_from_input(void)
+{
+    if (!g_in->buffer_len) return;
+    g_pager->marks[tui_get_register_index(*g_in->buffer)] = g_pager->scroll;
+}
+
+/* Follow mark that is currently in input buffer */
+void
+tui_goto_mark_from_input(void)
+{
+    if (!g_in->buffer_len) return;
+    g_pager->scroll = g_pager->marks[tui_get_register_index(*g_in->buffer)];
+    tui_invalidate(INVALIDATE_PAGER_BIT | INVALIDATE_STATUS_LINE_BIT);
 }
 
 /* Goto a site */

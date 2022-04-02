@@ -1,4 +1,4 @@
-OUT=gem
+OUT=frosty
 
 SRCS=$(shell ls *.c)
 OBJS=$(patsubst %.c,%.o,$(SRCS))
@@ -38,7 +38,8 @@ clean:
 
 # Link objs to executable
 $(OUT): $(OBJS)
-	$(CC) $^ -o $@ $(CFLAGS) $(LDFLAGS)
+	@$(CC) $^ -o $@ $(CFLAGS) $(LDFLAGS)
+	@echo " [link] $@"
 
 # Include generated dependencies
 -include $(DEPS)
@@ -46,9 +47,11 @@ $(OUT): $(OBJS)
 
 # Compile objects with dependencies
 %.o: %.c $(PCH) Makefile
-	$(CC) -MMD -MP -c $< -o $@ $(CFLAGS) $(LDFLAGS)
+	@$(CC) -MMD -MP -c $< -o $@ $(CFLAGS) $(LDFLAGS)
+	@echo "   [cc] $<"
 
 # Compile PCH
 $(PCH): $(PCH_SRC) Makefile
-	$(CC) -MMD -MP -x c-header -o $(PCH) -c $(PCH_SRC) $(CFLAGS) $(LDFLAGS)
+	@$(CC) -MMD -MP -x c-header -o $(PCH) -c $(PCH_SRC) $(CFLAGS) $(LDFLAGS)
+	@echo "   [cc] $<"
 

@@ -1,0 +1,15 @@
+frosty
+======
+
+A  terminal small-Internet client.  Currently implements  both  the  Gemini  and
+Gopher protocols.
+
+frosty aims to be  a  reasonably simple client, though placing a strong emphasis
+on efficiency (features mostly vi-like keybindings), pretty typography,  and the
+ability surf  "offline"  via archived/local copies of pages and directories.
+
+The project is written in C and is Makefile-based.   The only dependency  as  of
+yet is  a TLS/crypto library.  The project is known to build successfully and be
+fully functional with both the OpenSSL and LibreSSL libraries.
+
+frosty is licensed under terms of the GPLv3 free software license.

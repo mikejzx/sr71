@@ -166,16 +166,15 @@ pager_scroll(int amount)
     g_pager->scroll += amount;
 }
 
+/* -1 for top, 1 for bottom */
 void
-pager_scroll_top(void) { g_pager->scroll = 0; }
-
-void
-pager_scroll_bottom(void)
+pager_scroll_topbot(int t)
 {
-    g_pager->scroll =
-        (int)g_pager->buffer.line_count - (int)g_pager->visible_buffer.h / 2;
-    g_pager->scroll =
-        min(max(g_pager->scroll, 0), g_pager->buffer.line_count - 1);
+    g_pager->scroll = t == -1
+        ? 0
+        : min(max((int)g_pager->buffer.line_count -
+                  (int)g_pager->visible_buffer.h / 2, 0),
+                       g_pager->buffer.line_count - 1);
 }
 
 /* Scroll to next paragraph (dir is -1 or 1) */
@@ -188,14 +187,14 @@ pager_scroll_paragraph(int dir)
     for (i = g_pager->scroll;
         i >= 0 &&
             i < g_pager->buffer.line_count &&
-            !g_pager->buffer.lines[i].bytes;
+            g_pager->buffer.lines[i].bytes <= 1;
         i += dir);
 
     // Scroll to next empty line (end of paragraph)
     for (;
         i >= 0 &&
             i < g_pager->buffer.line_count &&
-            g_pager->buffer.lines[i].bytes;
+            g_pager->buffer.lines[i].bytes > 1;
         i += dir);
 
     g_pager->scroll = min(max(i, 0), g_pager->buffer.line_count - 1);

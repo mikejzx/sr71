@@ -1,813 +1,293 @@
 #include "pch.h"
-#include "history.h"
+#include "pager.h"
 #include "state.h"
 #include "tui.h"
-#include "uri.h"
-#include "pager.h"
-#include "cache.h"
+#include "tui_input.h"
+#include "tui_input_prompt.h"
 
-static enum tui_invalidate_flags s_invalidate;
-static enum tui_mode_id s_next_mode = TUI_MODE_UNKNOWN;
+struct tui_input *g_in;
 
-static int tui_handle_mode_normal(char);
-static int tui_handle_mode_input(char);
-static int tui_handle_mode_links(char);
+static enum tui_status tui_input_normal(const char *, const ssize_t);
+static enum tui_status tui_input_links(const char *, const ssize_t);
 
-enum single_char_mode
+// Input handler list
+static const struct tui_input_handler
 {
-    SMODE_NONE = 0,
-    SMODE_MARK_SET,
-    SMODE_MARK_FOLLOW,
-} s_next_char = SMODE_NONE;
-
-int
-tui_handle_input(char buf)
+    // Handler function
+    const enum tui_status(*func)(const char *, const ssize_t);
+} TUI_INPUT_HANDLERS[TUI_MODE_COUNT] =
 {
-    static int result;
-    s_invalidate = INVALIDATE_NONE;
+    [TUI_MODE_UNKNOWN]      = { NULL                      },
+    [TUI_MODE_NORMAL]       = { tui_input_normal          },
+    [TUI_MODE_COMMAND]      = { NULL                      },
+    [TUI_MODE_INPUT]        = { tui_input_prompt_text     },
+    [TUI_MODE_INPUT_SECRET] = { NULL                      },
+    [TUI_MODE_LINKS]        = { tui_input_links           },
+    [TUI_MODE_MARK_SET]     = { tui_input_prompt_register },
+    [TUI_MODE_MARK_FOLLOW]  = { tui_input_prompt_register },
+    [TUI_MODE_SEARCH]       = { NULL                      },
+};
 
-    // Marks are handled a bit strangely for the moment; they're seperate from
-    // the main state machine.  The input code needs to be re worked quite a bit
-    // for a better cleaner implementation...
-    if (s_next_char != SMODE_NONE)
+/* Special flags for movement functions */
+enum movement_input_flag
+{
+    MOVEMENT_INPUT_NONE = 0,
+    MOVEMENT_INPUT_HALF_PAGE,
+    MOVEMENT_INPUT_FULL_PAGE,
+};
+
+/* Movement functions which can map directly to characters */
+static const struct movement_char
+{
+    void(*func)(int);
+    int func_param;
+    enum movement_input_flag flag;
+} MOVEMENT_CHARS[256] =
+{
+    // j/k (Ctrl+E, Ctrl+Y) for up/down
+    ['j']        = { pager_scroll,  1, 0 },
+    [0100 ^ 'E'] = { pager_scroll,  1, 0 },
+    ['k']        = { pager_scroll, -1, 0 },
+    [0100 ^ 'Y'] = { pager_scroll, -1, 0 },
+    // u/d (Ctrl+D, Ctrl+U) for half page up/down
+    ['d']        = { pager_scroll,  1, MOVEMENT_INPUT_HALF_PAGE },
+    [0100 ^ 'D'] = { pager_scroll,  1, MOVEMENT_INPUT_HALF_PAGE },
+    ['u']        = { pager_scroll, -1, MOVEMENT_INPUT_HALF_PAGE },
+    [0100 ^ 'U'] = { pager_scroll, -1, MOVEMENT_INPUT_HALF_PAGE },
+    // Ctrl+F/Ctrl+B for full page up/down
+    [0100 ^ 'F'] = { pager_scroll,  1, MOVEMENT_INPUT_FULL_PAGE },
+    [0100 ^ 'B'] = { pager_scroll, -1, MOVEMENT_INPUT_FULL_PAGE },
+    // g/G for top/bottom
+    ['g']        = { pager_scroll_topbot, -1, 0 },
+    ['G']        = { pager_scroll_topbot,  1, 0 },
+    // {} for paragraph movement
+    ['{']        = { pager_scroll_paragraph, -1, 0 },
+    ['}']        = { pager_scroll_paragraph,  1, 0 },
+    // [] for heading movement
+    ['[']        = { pager_scroll_heading, -1, 0 },
+    [']']        = { pager_scroll_heading,  1, 0 },
+};
+
+/* Movement escape codes */
+static const struct movement_escape
+{
+    const char *esc;
+    struct movement_char m;
+} MOVEMENT_ESCAPES[] =
+{
+    // Home; top of page
+    { "\x1b[1~", { pager_scroll_topbot, -1 } },
+    // End:  end of page
+    { "\x1b[4~", { pager_scroll_topbot,  1 } },
+    // PgUp; full page up
+    { "\x1b[5~", { pager_scroll, -1, MOVEMENT_INPUT_FULL_PAGE } },
+    // PgDn; full page down
+    { "\x1b[6~", { pager_scroll,  1, MOVEMENT_INPUT_FULL_PAGE } },
+
+    // TODO: arrow keys
+
+    // Null-terminator
+    { NULL },
+};
+
+static inline void
+movement_char_execute(const struct movement_char *m)
+{
+    static int i;
+
+    // Get parameter
+    i = m->func_param;
+    switch(m->flag)
     {
-        tui_status_clear();
-
-        if (buf == '\n' ||
-            buf == '\x1b' ||
-            !is_alphanumeric(buf))
-        {
-            result = 0;
-            s_next_char = SMODE_NONE;
-            return 0;
-        }
-
-        int index;
-        if (buf <= '9') index = buf - '0';
-        else if (buf <= 'Z') index = buf - 'A' + '9' - '0' + 1;
-        else index = buf - 'a' + '9' - '0' + 1 + 'Z' - 'A' + 1;
-
-        switch(s_next_char)
-        {
-        case SMODE_MARK_SET:
-            g_pager->marks[index] = g_pager->scroll;
-            break;
-        case SMODE_MARK_FOLLOW:
-            g_pager->scroll = g_pager->marks[index];
-            tui_invalidate(
-                INVALIDATE_PAGER_BIT | INVALIDATE_STATUS_LINE_BIT);
-            break;
-        default: break;
-        }
-        s_next_char = SMODE_NONE;
-
-        return 0;
+    case MOVEMENT_INPUT_HALF_PAGE: i *= g_tui->h / 2; break;
+    case MOVEMENT_INPUT_FULL_PAGE: i *= g_tui->h;     break;
+    default: break;
     }
 
-    switch(g_tui->mode)
-    {
-    default:
-    case TUI_MODE_NORMAL:
-        if (buf == '\n')
-        {
-            result = 0;
-            break;
-        }
-        result = tui_handle_mode_normal(buf);
-        break;
-
-    case TUI_MODE_COMMAND:
-        // Not implemented
-        exit(0);
-        break;
-
-    case TUI_MODE_INPUT:
-        result = tui_handle_mode_input(buf);
-        break;
-
-    case TUI_MODE_PASSWORD:
-        // Not implemented
-        exit(0);
-        break;
-
-    case TUI_MODE_LINKS:
-    links_mode_begin:
-        result = tui_handle_mode_links(buf);
-        break;
-    }
-
-    if (result < 0) return result;
-
-    // Repaint the TUI
-    if (s_invalidate) tui_invalidate(s_invalidate);
-
-    // Transition to next mode
-    if (!s_next_mode) return 0;
-    g_tui->mode = s_next_mode;
-
-    switch(s_next_mode)
-    {
-    // Regular paging mode
-    default:
-    case TUI_MODE_NORMAL:
-        // Hide cursor, etc.
-        tui_cursor_move(0, 0);
-        tui_say("\x1b[?25l");
-        break;
-
-    // Command input mode
-    case TUI_MODE_COMMAND:
-        // TODO not implemented
-        break;
-
-    // Text input mode (also used for link input)
-    case TUI_MODE_INPUT:
-    case TUI_MODE_LINKS:
-        // Write the prompt message and show cursor
-        tui_status_begin();
-        tui_sayn(g_tui->input_prompt, g_tui->input_prompt_len);
-        tui_say("\x1b[?25h");
-        tui_status_end();
-
-        if (g_tui->input_caret)
-        {
-            tui_sayn(g_tui->input, g_tui->input_caret);
-        }
-        break;
-
-    // Password input mode
-    case TUI_MODE_PASSWORD:
-        // TODO not implemented
-        break;
-    }
-
-    if (s_next_mode == TUI_MODE_LINKS)
-    {
-        s_next_mode = TUI_MODE_UNKNOWN;
-        goto links_mode_begin;
-    }
-    s_next_mode = TUI_MODE_UNKNOWN;
-
-    return 0;
+    // Execute function and invalidate the TUI
+    m->func(i);
+    tui_invalidate(INVALIDATE_ALL);
 }
 
-/* Main motion keys */
-static bool
-tui_handle_common_movement(char buf)
+/* Initialise input handler */
+void
+tui_input_init(void)
 {
-    switch (buf)
-    {
-    // The basic vi/less style keys
-    case 'j':
-    case ('E' ^ 0100):
-        pager_scroll(1);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case 'k':
-    case ('Y' ^ 0100):
-        pager_scroll(-1);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case 'd':
-    case ('D' ^ 0100):
-        pager_scroll(g_tui->h / 2);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case 'u':
-    case ('U' ^ 0100):
-        pager_scroll(g_tui->h / -2);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case ('F' ^ 0100):
-        pager_scroll(g_tui->h);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case ('B' ^ 0100):
-        pager_scroll(-g_tui->h);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case 'g':
-        pager_scroll_top();
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case 'G':
-        pager_scroll_bottom();
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-
-    // Paragraph/heading movement
-    case '{':
-        pager_scroll_paragraph(-1);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case '}':
-        pager_scroll_paragraph(1);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case '[':
-        pager_scroll_heading(-1);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-    case ']':
-        pager_scroll_heading(1);
-        s_invalidate = INVALIDATE_ALL;
-        return true;
-
-    // Mark handling (m to set, ' to follow)
-    case 'm':
-        s_next_char = SMODE_MARK_SET;
-        tui_status_say("set mark?");
-        return true;
-    case '\'':
-        s_next_char = SMODE_MARK_FOLLOW;
-        tui_status_say("follow mark?");
-        return true;
-
-    // Not handled
-    default: return false;
-    }
+    g_in = &g_tui->in;
+    memset(g_in, 0, sizeof(struct tui_input));
+    tui_input_mode(TUI_MODE_NORMAL);
 }
 
-static int
-tui_handle_mode_normal(char buf)
+/* Handle given input buffer */
+enum tui_status
+tui_input_handle(const char *buf, const ssize_t buf_len)
 {
-    if (tui_handle_common_movement(buf)) return 0;
+    // Run input handler function
+    enum tui_status(*func)(const char *, const ssize_t) =
+        TUI_INPUT_HANDLERS[g_in->mode].func;
+    if (!func) return TUI_QUIT;
+    return func(buf, buf_len);
+}
 
-    // Handle input
-    switch (buf)
+static enum tui_status
+tui_input_common(const char *buf, const ssize_t buf_len)
+{
+    union
     {
-    case '\x1b':
-        // Deselect selected link
-        g_pager->selected_link_index = -1;
-        s_invalidate = INVALIDATE_PAGER_SELECTED_BIT;
-        break;
+        const struct movement_char *c;
+        const struct movement_escape *x;
+    } m;
 
-    // 'o': open page.
+    // First handle escape inputs, which are multi-byte
+    if (buf_len > 1)
+    {
+        // Check if any escapes match this
+        for (m.x = MOVEMENT_ESCAPES;
+            m.x->esc;
+            ++m.x)
+        {
+            if (buf_len == strlen(m.x->esc) &&
+                strncmp(buf, m.x->esc, buf_len) == 0 &&
+                m.x->m.func != NULL)
+            {
+                movement_char_execute(&m.x->m);
+                return TUI_OK;
+            }
+        }
+
+        return TUI_UNHANDLED;
+    }
+
+    // Movement handlers
+    const char c = *buf;
+    if (c >= 0 &&
+        c < sizeof(MOVEMENT_CHARS) &&
+        (m.c = &MOVEMENT_CHARS[(int)c])->func != NULL)
+    {
+        movement_char_execute(m.c);
+        return TUI_OK;
+    }
+
+    return TUI_UNHANDLED;
+}
+
+// Handle normal mode input
+static enum tui_status
+tui_input_normal(const char *buf, const ssize_t buf_len)
+{
+    // Apply common handlers
+    if (tui_input_common(buf, buf_len) == TUI_OK) return TUI_OK;
+
+    // Chars specific to Normal mode
+    const char c = *buf;
+    switch(c)
+    {
+    /* 'q' to quit */
+    case 'q': return TUI_QUIT;
+
+    /* 'o' to enter a URI */
     case 'o':
-    {
-        // Prompt user for URL to visit
-        s_next_mode = TUI_MODE_INPUT;
+        tui_input_prompt_begin("go: ", "gemini://", tui_go_from_input);
+        tui_input_mode(TUI_MODE_INPUT);
+        return TUI_OK;
 
-        const char *PROMPT = "go: ";
-        g_tui->input_prompt_len = strlen(PROMPT);
-        strncpy(g_tui->input_prompt, PROMPT,
-            g_tui->input_prompt_len + 1);
-
-        const char *INPUT_DEFAULT = "gemini://";
-        g_tui->input_len = strlen(INPUT_DEFAULT);
-        g_tui->input_caret = g_tui->input_len;
-        strncpy(g_tui->input, INPUT_DEFAULT,
-            g_tui->input_len + 1);
-
-        g_tui->cb_input_complete = tui_go_from_input;
-    } break;
-
-    // 'f' follow selected link
-    case 'f':
-    {
-        // Make sure we have a link to follow
-        if (g_pager->selected_link_index < 0 &&
-            g_pager->selected_link_index >= g_pager->link_count)
-        {
-            break;
-        }
-
-        // Find the URI that link corresponds to, and follow
-        struct uri *uri =
-            &g_pager->links[g_pager->selected_link_index].uri;
-        tui_go_to_uri(uri, true, false);
-    } break;
-
-    // 'e' to edit current page link in a 'go' command
+    /* 'e' to edit current URI */
     case 'e':
     {
+        // Get URI to edit
         struct uri *uri;
         if (g_pager->selected_link_index < 0 ||
             g_pager->selected_link_index >= g_pager->link_count)
         {
-            // Use current page link
+            // Use current page URI
             uri = &g_state->uri;
         }
         else
         {
-            // Use selected link
+            // Use selected link URI
             uri = &g_pager->links[g_pager->selected_link_index].uri;
         }
-        char uri_string[256];
-        size_t uri_strlen =
-            uri_str(uri, uri_string, sizeof(uri_string), 0);
 
-        s_next_mode = TUI_MODE_INPUT;
+        char uristr[URI_STRING_MAX];
+        uri_str(uri, uristr, sizeof(uristr), 0);
+        tui_input_prompt_begin("go: ", uristr, tui_go_from_input);
+        tui_input_mode(TUI_MODE_INPUT);
+    } return TUI_OK;
 
-        const char *PROMPT = "go: ";
-        g_tui->input_prompt_len = strlen(PROMPT);
-        strncpy(g_tui->input_prompt, PROMPT,
-            g_tui->input_prompt_len + 1);
-
-        g_tui->input_caret = g_tui->input_len = uri_strlen;
-        strncpy(g_tui->input, uri_string, g_tui->input_len + 1);
-
-        g_tui->cb_input_complete = tui_go_from_input;
-    } break;
-
-    // ',' navigate history backward
-    case ',':
-    case 'b':
-    {
-        const struct history_item *const item = history_pop();
-        if (item == NULL || !item->initialised)
-        {
-            tui_status_say("No older history");
-            break;
-        }
-
-        tui_go_to_uri(&item->uri, false, false);
-    } break;
-
-    // ';' navigate history forward
-    case ';':
-    case 'w':
-    {
-        const struct history_item *const item = history_next();
-        if (item == NULL || !item->initialised)
-        {
-            tui_status_say("No re-do history");
-            break;
-        }
-
-        tui_go_to_uri(&item->uri, false, false);
-    } break;
-
-    // 'Ctrl+P' go to parent directory
-    case (0100 ^ 'P'):
+    /* '.' to go to parent directory */
     case '.':
     {
-        struct uri uri_rel =
+        struct uri uri_parent =
         {
             .protocol = PROTOCOL_NONE,
             .path = "../",
         };
-        uri_abs(&g_state->uri, &uri_rel);
-        tui_go_to_uri(&uri_rel, true, false);
-    } break;
+        uri_abs(&g_state->uri, &uri_parent);
+        tui_go_to_uri(&uri_parent, true, false);
+    } return TUI_OK;
 
-    // 'Ctrl+R' go to root directory
+    /* 'Ctrl+R' go to root directory */
     case (0100 ^ 'R'):
     {
-        struct uri uri;
-        memcpy(&uri, &g_state->uri, sizeof(struct uri));
-        strcpy(uri.path, "/");
-        tui_go_to_uri(&uri, true, false);
-    } break;
+        struct uri uri_root;
+        memcpy(&uri_root, &g_state->uri, sizeof(struct uri));
+        uri_root.path[0] = '/';
+        uri_root.path[1] = '\0';
+        tui_go_to_uri(&uri_root, true, false);
+    } return TUI_OK;
 
-    // 'r' refresh page
+    // 'r' to refresh
     case 'r':
     {
-    #if CACHE_USE_DISK
-        // Copy the old hash
-        unsigned char old_hash[EVP_MAX_MD_SIZE];
-        unsigned old_hash_len = 0;
-        if (g_pager->cached_page &&
-            uri_cmp(&g_pager->cached_page->uri, &g_state->uri) == 0)
-        {
-            old_hash_len = g_pager->cached_page->hash_len;
-            memcpy(old_hash, g_pager->cached_page->hash, old_hash_len);
-        }
+        // TODO
+    } return TUI_OK;
 
-        if (tui_go_to_uri(&g_state->uri, false, true) == 0 && old_hash_len)
-        {
-            // Check if the hashes match
-            if (old_hash_len == g_pager->cached_page->hash_len &&
-                memcmp(old_hash, g_pager->cached_page->hash, old_hash_len) == 0)
-            {
-                tui_status_say("no changes since last cache");
-            }
-            else
-            {
-                tui_status_say("page has changed since last cache");
-            }
-        }
-    #else
-        tui_go_to_uri(&g_state->uri, false, true);
-    #endif
-    } break;
-
-    // Pressing a number goes into links mode
-    case '0':
-    case '1':
-    case '2':
-    case '3':
-    case '4':
-    case '5':
-    case '6':
-    case '7':
-    case '8':
-    case '9':
-    // 'J' and 'K' also put us in this mode
-    case 'J':
-    case 'K':
-    case 'n':
-    case 'p':
+    // ',' history backward
+    case ',':
     {
-        // Don't switch if there's no bloody links
-        if (!g_pager->link_count) break;
-
-        s_next_mode = TUI_MODE_LINKS;
-
-        // Format of the prompt is:
-        // 'follow link X ? (scheme://the.url/that/link/corresponds/to)
-        const char *PROMPT = "follow link ";
-        g_tui->input_prompt_len = strlen(PROMPT);
-        strncpy(g_tui->input_prompt, PROMPT,
-            g_tui->input_prompt_len + 1);
-
-        // We reset input here; though since on mode change we goto
-        // links_mode_begin label, it will automatically get added
-        g_tui->input_caret = 0;
-        g_tui->input_len = 0;
-
-        // This is for 'J' and 'K' and simply sets the selected link to
-        // be the first one *on the visible screen*, rather than the
-        // first in the entire buffer.  We have to offset it by one (as
-        // the 'J' and 'K' handlers in the link mode will add/subtract
-        // one link respectively).  Bit hacky but it works
-        if ((buf == 'J' || buf == 'n') &&
-            g_pager->selected_link_index < 0)
+        const struct history_item *const item = history_pop();
+        if (item == NULL ||
+            !item->initialised)
         {
-            pager_select_first_link_visible();
-            --g_pager->selected_link_index;
+            tui_status_say("Already at oldest page");
+            return TUI_OK;
         }
-        if ((buf == 'K' || buf == 'p') &&
-            g_pager->selected_link_index < 0)
+        tui_go_to_uri(&item->uri, false, false);
+    } return TUI_OK;
+
+    // ';' history forward
+    case ';':
+    {
+        const struct history_item *const item = history_next();
+        if (item == NULL ||
+            !item->initialised)
         {
-            pager_select_last_link_visible();
-            ++g_pager->selected_link_index;
+            tui_status_say("Already at latest page");
+            return TUI_OK;
         }
-    } break;
+        tui_go_to_uri(&item->uri, false, false);
+    } return TUI_OK;
 
-    // For now 'q' to exit
-    case 'q':
-        //exit(0);
-        //break;
-        return -1;
-
-    default: break;
+    // 'm' mark set mode and apostrophe for mark follow
+    case 'm':
+        tui_input_prompt_begin("set mark: ", NULL, tui_set_mark_from_input);
+        tui_input_mode(TUI_MODE_MARK_SET);
+        return TUI_OK;
+    case '\'':
+        tui_input_prompt_begin("goto mark: ", NULL, tui_goto_mark_from_input);
+        tui_input_mode(TUI_MODE_MARK_FOLLOW);
+        return TUI_OK;
     }
 
-    return 0;
+    return TUI_UNHANDLED;
 }
 
-static int
-tui_handle_mode_input(char buf)
+// Handle link mode input
+static enum tui_status
+tui_input_links(const char *buf, const ssize_t buf_len)
 {
-    // TODO: proper scrolling or something
-    int x_pos = min(
-        1 + g_tui->input_prompt_len +
-        (int)g_tui->input_caret, g_tui->w);
-    tui_cursor_move(x_pos, g_tui->h);
+    // Apply common handlers
+    if (tui_input_common(buf, buf_len) == TUI_OK) return TUI_OK;
 
-    switch (buf)
-    {
-    /* Ctrl-W: backspace a whole word */
-    case (0100 ^ 'W'):
-    {
-        // We take a similar approach to what w3m does: remove until we reach a
-        // non-alphanumeric character
-        if (g_tui->input_caret <= 0)
-        {
-            // Can't backspace any further
-            return 0;
-        }
-        size_t new;
-        for (new = g_tui->input_caret - 1;
-            new > 0 && is_alphanumeric(g_tui->input[new - 1]);
-            --new);
-        int diff = max(g_tui->input_caret - new, 0);
-        g_tui->input_len -= diff;
-        g_tui->input_caret = new;
-        g_tui->input[g_tui->input_caret - 1] = '\0';
-        tui_cursor_move(x_pos - diff, g_tui->h);
-        tui_printf("%*s", diff, "");
-        tui_cursor_move(x_pos - diff, g_tui->h);
-    } return 0;
-
-    /* Ctrl-P: cycle protocol of URI */
-    case (0100 ^ 'P'):
-    {
-        const size_t LEN = strlen("gopher"), LEN_P = strlen("gopher://");
-
-        // Check for scheme and change them around (luckily 'gopher' and
-        // 'gemini' have same string length...)
-        if (g_tui->input_len >= LEN_P &&
-            strncmp(g_tui->input, "gopher://", LEN_P) == 0)
-        {
-            // Change the protocol to Gemini
-            memcpy(g_tui->input, "gemini", LEN);
-            tui_cursor_move(
-                (int)min(1 + g_tui->input_prompt_len, g_tui->w),
-                g_tui->h);
-            tui_say("gemini");
-
-            // Move back to old position
-            tui_cursor_move(x_pos, g_tui->h);
-            return 0;
-        }
-        if (g_tui->input_len >= LEN_P &&
-            strncmp(g_tui->input, "gemini://", LEN_P) == 0)
-        {
-            // Change the protocol to gopher
-            memcpy(g_tui->input, "gopher", LEN);
-            tui_cursor_move(
-                (int)min(1 + g_tui->input_prompt_len, g_tui->w),
-                g_tui->h);
-            tui_say("gopher");
-
-            // Move back to old position
-            tui_cursor_move(x_pos, g_tui->h);
-            return 0;
-        }
-    } return 0;
-
-    /* Return key; end of input */
-    case '\n':
-        // Execute callback
-        if (g_tui->input_len &&
-            g_tui->cb_input_complete)
-        {
-            g_tui->cb_input_complete();
-        }
-
-        // Change back to normal input
-        s_next_mode = TUI_MODE_NORMAL;
-        return 0;
-
-    /* Backspace key; move caret backward */
-    case 0x7f:
-        if (g_tui->input_caret <= 0)
-        {
-            // Can't backspace any further
-            return 0;
-        }
-        g_tui->input[g_tui->input_caret - 1] = '\0';
-        tui_cursor_move(x_pos - 1, g_tui->h);
-        tui_say(" ");
-        tui_cursor_move(x_pos - 1, g_tui->h);
-        --g_tui->input_caret;
-        --g_tui->input_len;
-        return 0;
-
-    /* Escape key; cancel input */
-    case '\x1b':
-        tui_status_clear();
-        s_next_mode = TUI_MODE_NORMAL;
-        return 0;
-
-    /* Caret movement */
-    case (0100 ^ 'H'):
-        g_tui->input_caret = max((int)g_tui->input_caret - 1, 0);
-        return 0;
-    case (0100 ^ 'L'):
-        g_tui->input_caret = min(
-            g_tui->input_caret + 1, g_tui->input_len);
-        return 0;
-    }
-
-    // Check that we don't overflow the input
-    if (g_tui->input_len + 1 >= TUI_INPUT_BUFFER_MAX)
-    {
-        return 0;
-    }
-
-    g_tui->input[g_tui->input_caret] = buf;
-
-    // Add the text to the buffer
-    g_tui->input[g_tui->input_len + 1] = '\0';
-
-    ++g_tui->input_caret;
-    ++g_tui->input_len;
-
-    tui_sayn(&buf, 1);
-
-    tui_cursor_move(x_pos + 1, g_tui->h);
-
-    return 0;
-}
-
-static int
-tui_handle_mode_links(char buf)
-{
-    // Relocate to caret pos
-    int x_pos = min(
-        1 + g_tui->input_prompt_len +
-        (int)g_tui->input_caret, g_tui->w);
-    tui_cursor_move(x_pos, g_tui->h);
-
-    if (tui_handle_common_movement(buf)) return 0;
-
-    switch (buf)
-    {
-    /* Ctrl-W: clear whole thing */
-    case (0100 ^ 'W'):
-        g_tui->input_caret = 0;
-        g_tui->input_len = 0;
-        g_tui->input[0] = '\0';
-        x_pos = min(g_tui->input_prompt_len, g_tui->w);
-        goto update_link_peek;
-
-    // Return or 'f': follow link
-    case '\n':
-    case 'f':
-        // Find the URI that link corresponds to
-        if (g_pager->selected_link_index >= 0 &&
-            g_pager->selected_link_index < g_pager->link_count)
-        {
-            // Follow link
-            struct uri *uri =
-                &g_pager->links[g_pager->selected_link_index].uri;
-            tui_go_to_uri(uri, true, false);
-        }
-        else
-        {
-            tui_status_say("No such link");
-        }
-
-        // Change back to normal input
-        s_next_mode = TUI_MODE_NORMAL;
-        return 0;
-
-    /* backspace key; delete and move caret backward */
-    case 0x7f:
-        if (g_tui->input_caret <= 0)
-        {
-            // Can't backspace any further
-            return 0;
-        }
-        g_tui->input[g_tui->input_caret - 1] = '\0';
-        tui_cursor_move(x_pos - 1, g_tui->h);
-        tui_say(" ");
-        tui_cursor_move(x_pos - 1, g_tui->h);
-        --g_tui->input_caret;
-        --g_tui->input_len;
-
-        x_pos -= 2;
-        goto update_link_peek;
-
-    /* 'x' delete digit under cursor */
-    case 'x':
-        goto update_link_peek;
-
-    /*
-     * Escape key (or 'q'): cancel input.  'Q' to cancel input and
-     * deselect selected link
-     */
-    case 'Q':
-        g_pager->selected_link_index = -1;
-    case '\x1b':
-    case 'q':
-        tui_status_clear();
-        s_next_mode = TUI_MODE_NORMAL;
-        return 0;
-
-    /* 'e' to use/edit the link in a 'go' command */
-    case 'e':
-    {
-        if (g_pager->selected_link_index < 0 ||
-            g_pager->selected_link_index >= g_pager->link_count)
-        {
-            return 0;
-        }
-        struct uri *uri =
-            &g_pager->links[g_pager->selected_link_index].uri;
-        char uri_string[256];
-        size_t uri_strlen =
-            uri_str(uri, uri_string, sizeof(uri_string), 0);
-
-        s_next_mode = TUI_MODE_INPUT;
-
-        const char *PROMPT = "go: ";
-        g_tui->input_prompt_len = strlen(PROMPT);
-        strncpy(g_tui->input_prompt, PROMPT,
-            g_tui->input_prompt_len + 1);
-
-        g_tui->input_caret = g_tui->input_len = uri_strlen;
-        strncpy(g_tui->input, uri_string, g_tui->input_len + 1);
-
-        g_tui->cb_input_complete = tui_go_from_input;
-    } return 0;
-
-    /* 'h' move caret left */
-    case 'h':
-    {
-        if (g_tui->input_caret == 0) return 0;
-        --g_tui->input_caret;
-        tui_cursor_move(x_pos - 1, g_tui->h);
-    } return 0;
-
-    /* 'J' next link */
-    case 'J':
-    case 'n':
-        if (!g_pager->link_count) return 0;
-
-        g_pager->selected_link_index =
-            (g_pager->selected_link_index + 1) % g_pager->link_count;
-
-        g_tui->input_caret = g_tui->input_len = snprintf(g_tui->input,
-            TUI_INPUT_BUFFER_MAX,
-            "%d",
-            g_pager->selected_link_index);
-
-        // Print the new value
-        x_pos = min(1 + g_tui->input_prompt_len, g_tui->w);
-        tui_cursor_move(x_pos, g_tui->h);
-        tui_sayn(g_tui->input, g_tui->input_len);
-        x_pos += g_tui->input_caret - 1;
-
-        goto update_link_peek;
-
-    /* 'K' previous link */
-    case 'K':
-    case 'p':
-        if (!g_pager->link_count) return 0;
-
-        --g_pager->selected_link_index;
-        if (g_pager->selected_link_index < 0)
-        {
-            g_pager->selected_link_index = g_pager->link_count - 1;
-        }
-
-        g_tui->input_caret = g_tui->input_len = snprintf(g_tui->input,
-            TUI_INPUT_BUFFER_MAX,
-            "%d",
-            g_pager->selected_link_index);
-
-        // Print the new value
-        x_pos = min(1 + g_tui->input_prompt_len, g_tui->w);
-        tui_cursor_move(x_pos, g_tui->h);
-        tui_sayn(g_tui->input, g_tui->input_len);
-        x_pos += g_tui->input_caret - 1;
-
-        goto update_link_peek;
-
-    default: break;
-    }
-
-    // Check that we don't overflow the input
-    if (g_tui->input_len + 1 >= TUI_INPUT_BUFFER_MAX)
-    {
-        return 0;
-    }
-
-    // Only accept digit input
-    if (buf < '0' || buf > '9') return 0;
-
-    // If we have a zero at the beginning before other numbers, strip
-    // it (as it doesn't make sense for it to be there)
-    if (g_tui->input_caret == 1 &&
-        g_tui->input[0] == '0')
-    {
-        g_tui->input_caret = 0;
-        g_tui->input_len = 0;
-        --x_pos;
-        tui_cursor_move(x_pos, g_tui->h);
-    }
-
-    g_tui->input[g_tui->input_caret] = buf;
-
-    // Add the text to the buffer
-    g_tui->input[g_tui->input_len + 1] = '\0';
-
-    ++g_tui->input_caret;
-    ++g_tui->input_len;
-
-    // Print character
-    tui_sayn(&buf, 1);
-
-    // Clear old link name that was there
-update_link_peek:
-    tui_status_begin_soft();
-    tui_cursor_move(x_pos + 1, g_tui->h);
-    tui_printf("%*s", g_tui->w - x_pos, "");
-
-    if (g_tui->input_len)
-    {
-        g_pager->selected_link_index = atoi(g_tui->input);
-        if (g_pager->selected_link_index < g_pager->link_count)
-        {
-            char uri_name[g_tui->w];
-            size_t uri_name_len = uri_str(
-                &g_pager->links[g_pager->selected_link_index].uri,
-                uri_name,
-                g_tui->w, URI_FLAGS_NONE);
-
-            // Print name of link that number corresponds to
-            tui_cursor_move(x_pos + 1, g_tui->h);
-            tui_printf(" (%.*s)", (int)uri_name_len, uri_name);
-        }
-    }
-    tui_cursor_move(x_pos + 1, g_tui->h);
-    tui_status_end();
-
-    s_invalidate = INVALIDATE_PAGER_SELECTED_BIT;
-
-    return 0;
+    return TUI_UNHANDLED;
 }
