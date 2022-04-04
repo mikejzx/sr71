@@ -36,6 +36,8 @@ struct tui_state
 
     // Input handler
     struct tui_input in;
+
+    bool in_prompt;
 };
 
 extern struct tui_state *g_tui;
@@ -51,6 +53,12 @@ int tui_go_to_uri(const struct uri *const, bool, bool);
 void tui_go_from_input(void);
 void tui_set_mark_from_input(void);
 void tui_goto_mark_from_input(void);
+void tui_select_next_link(void);
+void tui_select_prev_link(void);
+void tui_follow_selected_link(void);
+void tui_update_link_peek(void);
+void tui_search_next(void);
+void tui_search_prev(void);
 
 /* Move cursor */
 #define tui_cursor_move(x, y) \

@@ -24,7 +24,7 @@ enum uri_protocol
     PROTOCOL_COUNT
 };
 
-static const char *PROTOCOL_NAMES[PROTOCOL_COUNT] =
+static const char *const PROTOCOL_NAMES[PROTOCOL_COUNT] =
 {
     [PROTOCOL_NONE]    = "",
     [PROTOCOL_UNKNOWN] = "",

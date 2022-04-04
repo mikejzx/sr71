@@ -63,11 +63,11 @@ struct tui_input
     char buffer[TUI_INPUT_BUFFER_MAX];
 
     // The buffer length; this does NOT include the null-termination character
-    size_t buffer_len;
+    int buffer_len;
 
     // Location of input buffer caret.
     // This is in range of 0 to buffer length + 1
-    size_t caret;
+    int caret;
 
     // Current prompt presented to user
     char prompt[TUI_INPUT_PROMPT_MAX];

@@ -89,6 +89,9 @@ pager_deinit(void)
 void
 pager_resized(void)
 {
+    // If width didn't change then we don't need to do anything
+    // TODO
+
     // Pager takes up whole screen except bottom two rows (for status line)
     int pager_height = max(g_tui->h - 2, 1);
 
@@ -305,10 +308,10 @@ pager_paint(bool full)
                 moved = true;
             }
 
-            line->len = min(line->len,
-                g_pager->visible_buffer.w -
-                g_pager->margin.l -
-                g_pager->margin.r);
+            //line->len = min(line->len,
+            //    g_pager->visible_buffer.w -
+            //    g_pager->margin.l -
+            //    g_pager->margin.r);
             //line->bytes = max(utf8_size_w_formats(line->s, line->len) - 1, 0);
             line->bytes = utf8_size_w_formats(line->s, line->len);
 

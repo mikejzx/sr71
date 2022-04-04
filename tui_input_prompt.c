@@ -2,12 +2,17 @@
 #include "tui.h"
 #include "tui_input.h"
 #include "tui_input_prompt.h"
+#include "uri.h"
 
 static char s_tmpbuf[TUI_INPUT_BUFFER_MAX];
 
 static enum tui_status buffer_insert(const char *, const ssize_t);
 static enum tui_status buffer_backspace(void);
+static enum tui_status buffer_backspace_word(void);
+static enum tui_status buffer_delete_to_end(void);
 static enum tui_status buffer_caret_shift(int);
+static enum tui_status buffer_caret_shift_word(int, bool);
+static enum tui_status buffer_protocol_cycle(void);
 
 /* Move cursor to the caret position */
 static inline void
@@ -18,10 +23,12 @@ buffer_caret_update(void)
 
 void
 tui_input_prompt_begin(
+    enum tui_input_mode mode,
     const char *prompt,
     const char *default_buffer,
     void(*cb_complete)(void))
 {
+    g_tui->in_prompt = true;
     tui_status_begin();
 
     if (prompt)
@@ -61,13 +68,25 @@ tui_input_prompt_begin(
 
     // Show cursor
     tui_say("\x1b[?25h");
+
+    // Switch mode
+    tui_input_mode(mode);
 }
 
 void
 tui_input_prompt_end()
 {
+    g_tui->in_prompt = false;
+
     // Hide the cursor
     tui_say("\x1b[?25l");
+
+    // Switch to next mode
+    tui_input_mode(TUI_MODE_NORMAL);
+
+    // Execute completion callback
+    if (g_in->buffer_len &&
+        g_in->cb_complete) g_in->cb_complete();
 }
 
 /* Handle simple text input to the buffer */
@@ -76,20 +95,23 @@ tui_input_prompt_text(const char *buf, ssize_t buf_len)
 {
     switch(*buf)
     {
-    /* Ret: end of input */
-    case '\n':
-        // Execute callback
-        if (g_in->buffer_len && g_in->cb_complete) g_in->cb_complete();
-        // ..fall through
-
     /* Esc: exit the prompt */
     case '\x1b':
+        g_in->buffer_len = 0;
+    /* Ret and Esc: end of input */
+    case '\n':
         tui_input_prompt_end();
-        tui_input_mode(TUI_MODE_NORMAL);
         return TUI_OK;
 
     /* Handle backspaces */
     case 0x7f: return buffer_backspace();
+
+    /* Ctrl-W: backspace one 'word' */
+    case (0100 ^ 'W'): return buffer_backspace_word();
+
+    /* Ctr;-N/Ctrl-P next/previous recent URI entry */
+    //case (0100 ^ 'N'): return buffer_history_next(BUFFER_HISTORY_URI);
+    //case (0100 ^ 'P'): return buffer_history_next(BUFFER_HISTORY_URI);
 
     /*
      * Handle caret movement
@@ -98,13 +120,81 @@ tui_input_prompt_text(const char *buf, ssize_t buf_len)
     case (0100 ^ 'H'): return buffer_caret_shift(-1);
     case (0100 ^ 'L'): return buffer_caret_shift(1);
 
-    /* - Ctrl-B, Ctrl-W for next/prev "section" in buffer (e.g. directories) */
+    /*
+     * Ctrl-B and Ctrl-F for moving by 'word', was going to use Ctrl-J and
+     * Ctrl-K but it causes issues...
+     */
+    case (0100 ^ 'B'): return buffer_caret_shift_word(-1, true);
+    case (0100 ^ 'F'): return buffer_caret_shift_word(1, true);
+
+    /* Ctrl-I: bit of a crazy experimental one; this acts like a 'ciw' in Vim */
+    case (0100 ^ 'I'):
+        buffer_caret_shift_word(1, true);
+        if (g_in->buffer[g_in->caret - 1] == '/') buffer_caret_shift(-1);
+        return buffer_backspace_word();
+
+    /* Ctrl-E: experimental 'delete to end' */
+    case (0100 ^ 'E'): return buffer_delete_to_end();
+
+    /*
+     * This is here for now; Ctrl-P to cycle through protocols of current URI
+     */
+    case (0100 ^ 'P'): return buffer_protocol_cycle();
 
     default: break;
     }
 
     return buffer_insert(buf, buf_len);
 }
+
+/* Handle digit-only input to the buffer */
+enum tui_status
+tui_input_prompt_digit(const char *buf, ssize_t buf_len)
+{
+    switch(*buf)
+    {
+    /* Esc: exit the prompt */
+    case '\x1b':
+    case 'q':
+        g_in->buffer_len = 0;
+    /* Ret: end of input */
+    case '\n':
+        tui_input_prompt_end();
+        tui_status_clear();
+        return TUI_OK;
+
+    /* Handle backspaces */
+    case 0x7f: return buffer_backspace();
+
+    /* 'x' to remove character under cursor */
+    case (0100 ^ 'X'):
+        buffer_caret_shift(1);
+        return buffer_backspace();
+
+    /* Ctrl-W usually just clears the whole thing */
+    case (0100 ^ 'W'): return buffer_backspace_word();
+
+    // Caret
+    case (0100 ^ 'H'): return buffer_caret_shift(-1);
+    case (0100 ^ 'L'): return buffer_caret_shift(1);
+
+    // Only allow inserting digits
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
+        return buffer_insert(buf, 1);
+    }
+
+    return TUI_UNHANDLED;
+}
+
 
 /* Input prompt for single-char/register inputs */
 enum tui_status
@@ -115,22 +205,13 @@ tui_input_prompt_register(const char *buf, ssize_t buf_len)
     // Cancel on esc
     if (*buf == '\x1b') goto end;
 
-#if 0
-    strncpy(g_in->buffer, buf, TUI_INPUT_BUFFER_LEN_MAX);
-    g_in->buffer_len += buf_len;
-#else
     g_in->buffer[0] = *buf;
     g_in->buffer[1] = '\0';
     g_in->buffer_len = 1;
-#endif
-
-    if (g_in->cb_complete) g_in->cb_complete();
 
 end:
     tui_status_clear();
     tui_input_prompt_end();
-    tui_input_mode(TUI_MODE_NORMAL);
-
     return TUI_OK;
 }
 
@@ -166,6 +247,10 @@ buffer_insert(const char *buf, const ssize_t buf_len)
             tmp_len);
     }
 
+    // Set new null-terminator
+    g_in->buffer_len += buf_len;
+    g_in->buffer[g_in->buffer_len] = '\0';
+
     // Print new string section
     tui_status_begin_soft();
     buffer_caret_update();
@@ -174,10 +259,7 @@ buffer_insert(const char *buf, const ssize_t buf_len)
 
     // Update caret position
     g_in->caret += buf_len;
-    g_in->buffer_len += buf_len;
     buffer_caret_update();
-
-    return TUI_OK;
 
     return TUI_OK;
 }
@@ -223,15 +305,227 @@ buffer_backspace(void)
     tui_say(" ");
     buffer_caret_update();
     tui_status_end();
+
     return TUI_OK;
 }
 
-/* Shift buffer caret left by 'n' chars */
+/* Backspace a "word" in the input buffer */
+static enum tui_status
+buffer_backspace_word(void)
+{
+    // Can't backspace any more
+    if (g_in->caret <= 0) return TUI_OK;
+
+    /* Store the string that is to the left of last-deleted char */
+    ssize_t section_len = g_in->buffer_len - g_in->caret;
+    if (section_len > 0)
+    {
+        strncpy(s_tmpbuf,
+            g_in->buffer + g_in->caret,
+            section_len);
+    }
+
+    // Move caret backward until we find a nice spot; takes a somewhat similar
+    // approach to w3m's input fields (eliminate whole directories at at time)
+    int dist = g_in->caret;
+    bool is_path = g_in->buffer[g_in->caret - 1] == '/';
+    if (isalpha(g_in->buffer[g_in->caret - 1]) || is_path)
+    {
+        if (is_path)
+        {
+            --g_in->caret;
+            --g_in->buffer_len;
+        }
+
+        // Move back until we find non-alphabetic char
+        for (;
+            g_in->caret > 0 && isalpha(g_in->buffer[g_in->caret - 1]);
+            --g_in->caret, --g_in->buffer_len);
+    }
+    else
+    {
+        // Move back until we find alphabetic char
+        for (;
+            g_in->caret > 0 && !isalpha(g_in->buffer[g_in->caret - 1]);
+            --g_in->caret, --g_in->buffer_len);
+    }
+    dist -= g_in->caret;
+
+    if (section_len > 0)
+    {
+        strncpy(g_in->buffer + g_in->caret,
+            s_tmpbuf,
+            section_len);
+    }
+    g_in->buffer[g_in->buffer_len] = '\0';
+
+    // Re-print the text that comes after the caret
+    tui_status_begin_soft();
+    buffer_caret_update();
+    if (g_in->caret < g_in->buffer_len)
+    {
+        tui_printf("%s",
+            g_in->buffer + g_in->caret);
+    }
+    tui_printf("%*s", dist, "");
+    buffer_caret_update();
+    tui_status_end();
+
+    return TUI_OK;
+}
+
+static enum tui_status
+buffer_delete_to_end(void)
+{
+    int diff = g_in->buffer_len - g_in->caret;
+
+    g_in->buffer_len = g_in->caret;
+    g_in->buffer[g_in->buffer_len] = '\0';
+
+    tui_status_begin_soft();
+    tui_printf("%*s", diff, "");
+    tui_status_end();
+
+    buffer_caret_update();
+
+    return TUI_OK;
+}
+
+/* Shift buffer caret by 'n' chars */
 static enum tui_status
 buffer_caret_shift(int n)
 {
     g_in->caret = max(min((int)g_in->caret + n, g_in->buffer_len), 0);
     buffer_caret_update();
+
+    return TUI_OK;
+}
+
+/* Shift buffer caret by 'n' words */
+static enum tui_status
+buffer_caret_shift_word(int n, bool skip_first)
+{
+    bool is_path = false;
+    int n_abs = abs(n), dir = sign(n);
+    for (int x = 0; x < n_abs; ++x)
+    {
+        if (skip_first) is_path = !isalpha(g_in->buffer[g_in->caret - 1]);
+
+        if (isalpha(g_in->buffer[g_in->caret - 1]) || is_path)
+        {
+            if (is_path && skip_first)
+            {
+                g_in->caret += dir;
+            }
+
+            // Move back until we find non-alphabetic char
+            for (;
+                ((g_in->caret > 0 && dir < 0) ||
+                (g_in->caret < g_in->buffer_len && dir > 0)) &&
+                isalpha(g_in->buffer[g_in->caret - 1]);
+                g_in->caret += dir);
+        }
+        else
+        {
+            // Move back until we find alphabetic char
+            for (;
+                ((g_in->caret > 0 && dir < 0) ||
+                (g_in->caret < g_in->buffer_len && dir > 0)) &&
+                !isalpha(g_in->buffer[g_in->caret - 1]);
+                g_in->caret += dir);
+        }
+    }
+
+    buffer_caret_update();
+    return TUI_OK;
+}
+
+enum tui_status
+tui_input_prompt_redraw_full(void)
+{
+    if (!g_tui->in_prompt) return TUI_OK;
+
+    tui_status_clear();
+
+    // Print the full status
+    tui_status_begin();
+    tui_printf("%s%s", g_in->prompt, g_in->buffer);
+    tui_status_end();
+
+    // Update caret
+    buffer_caret_update();
+
+    // Special case for link mode; need to update the link preview in status
+    if (g_in->mode == TUI_MODE_LINKS) tui_update_link_peek();
+
+    return TUI_OK;
+}
+
+/* Cycle through protocol if there is one at beginning of buffer */
+static enum tui_status
+buffer_protocol_cycle(void)
+{
+    // Protocols that we allow cycling through
+    static const char *PROTOCOL_SWITCH_AVAILABLE[] =
+    {
+        PROTOCOL_NAMES[PROTOCOL_GEMINI],
+        PROTOCOL_NAMES[PROTOCOL_GOPHER],
+    };
+    static const size_t PROTOCOL_SWITCH_AVAILABLE_COUNT =
+        sizeof(PROTOCOL_SWITCH_AVAILABLE) / sizeof(const char *);
+
+    for (int p = 0; p < PROTOCOL_SWITCH_AVAILABLE_COUNT; ++p)
+    {
+        // Check if we have a supported protocol in the buffer
+        const size_t plen = strlen(PROTOCOL_SWITCH_AVAILABLE[p]);
+        if (g_in->buffer_len < plen + 3 ||
+            strncmp(
+                g_in->buffer, PROTOCOL_SWITCH_AVAILABLE[p], plen) != 0 ||
+            strncmp(
+                g_in->buffer + plen, "://", 3) != 0)
+        {
+            continue;
+        }
+
+        // Copy everything to the right of the protocol to the temporary
+        // buffer
+        ssize_t tmp_len =
+            max(min(g_in->buffer_len - plen, sizeof(s_tmpbuf)), 0);
+        if (tmp_len > 0)
+        {
+            strncpy(s_tmpbuf,
+                g_in->buffer + plen,
+                tmp_len);
+        }
+
+        // Write in the next supported protocol
+        const char *p_next = PROTOCOL_SWITCH_AVAILABLE[(p + 1) %
+            PROTOCOL_SWITCH_AVAILABLE_COUNT];
+        size_t p_next_len = strlen(p_next);
+        strncpy(g_in->buffer, p_next, sizeof(g_in->buffer));
+
+        int buffer_len_diff =
+            (int)p_next_len + (int)tmp_len - (int)g_in->buffer_len;
+
+        g_in->buffer_len = p_next_len + tmp_len;
+
+        if (tmp_len > 0)
+        {
+            // Restore old suffix text
+            //strncpy(g_in->buffer + plen, s_tmpbuf, tmp_len);
+            strcat(g_in->buffer, s_tmpbuf);
+        }
+
+        g_in->buffer[g_in->buffer_len] = '\0';
+
+        // Move cursor to relative position
+        g_in->caret += buffer_len_diff;
+
+        // Re-draw the text in status
+        tui_input_prompt_redraw_full();
+
+        break;
+    }
 
     return TUI_OK;
 }

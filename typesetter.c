@@ -732,7 +732,7 @@ typeset_plaintext(
         buffer_pos += n_bytes;
 
         // Finish line
-        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
+        line->len = utf8_strnlen_w_formats(line->s, line->bytes + 1);
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
             b->lines_capacity)
         {

@@ -161,6 +161,7 @@ utf8_size_w_formats(const char *s, size_t l)
     bool is_escape = false;
     int bytes = 0;
     for (size_t count = 0; *s && count <= l; ++bytes, ++s)
+    //for (size_t count = 0; *s && count < l; ++bytes, ++s)
     {
         if (is_escape && *s != 'm')
         {

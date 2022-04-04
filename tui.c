@@ -7,6 +7,7 @@
 #include "status_line.h"
 #include "tui.h"
 #include "tui_input.h"
+#include "tui_input_prompt.h"
 #include "uri.h"
 
 struct tui_state *g_tui;
@@ -116,6 +117,8 @@ tui_repaint(bool clear)
 
     pager_paint(true);
     status_line_paint();
+
+    tui_input_prompt_redraw_full();
 }
 
 void
@@ -147,7 +150,7 @@ void
 tui_go_from_input(void)
 {
     // Parse the URI.
-    struct uri uri = uri_parse(g_in->buffer, g_in->buffer_len);
+    struct uri uri = uri_parse(g_in->buffer, g_in->buffer_len + 1);
 
     // We need to make sure that there is a protocol or else the URI parse
     // will cause problems
@@ -155,10 +158,10 @@ tui_go_from_input(void)
     {
         // Re-parse it with a 'gemini://' prefix
         char tmp[g_in->buffer_len + 1];
-        strncpy(tmp, g_in->buffer, g_in->buffer_len);
+        strncpy(tmp, g_in->buffer, g_in->buffer_len + 1);
         g_in->buffer_len = snprintf(g_in->buffer, TUI_INPUT_BUFFER_MAX,
-            "gemini://%s", tmp);
-        uri = uri_parse(g_in->buffer, g_in->buffer_len);
+            "gemini://%s", tmp) - 1;
+        uri = uri_parse(g_in->buffer, g_in->buffer_len + 1);
     }
     tui_go_to_uri(&uri, true, false);
 }
@@ -188,6 +191,118 @@ tui_goto_mark_from_input(void)
     if (!g_in->buffer_len) return;
     g_pager->scroll = g_pager->marks[tui_get_register_index(*g_in->buffer)];
     tui_invalidate(INVALIDATE_PAGER_BIT | INVALIDATE_STATUS_LINE_BIT);
+}
+
+/* Select the next link on the page */
+void
+tui_select_next_link(void)
+{
+    if (!g_pager->link_count) return;
+
+    g_pager->selected_link_index =
+        (g_pager->selected_link_index + 1) % g_pager->link_count;
+}
+
+/* Select the previous link on the page */
+void
+tui_select_prev_link(void)
+{
+    if (!g_pager->link_count) return;
+
+    --g_pager->selected_link_index;
+    if (g_pager->selected_link_index < 0)
+        g_pager->selected_link_index = g_pager->link_count - 1;
+}
+
+/* Follow selected link */
+void
+tui_follow_selected_link(void)
+{
+    if (g_pager->selected_link_index < 0 ||
+        g_pager->selected_link_index >= g_pager->link_count) return;
+
+    tui_go_to_uri(
+        &g_pager->links[g_pager->selected_link_index].uri,
+        true,
+        false);
+}
+
+void
+tui_update_link_peek(void)
+{
+    tui_status_begin_soft();
+
+    int cursor_old = g_tui->cursor_x;
+
+    // Clear everything after digits first
+    tui_cursor_move(g_in->prompt_len + 1 + g_in->buffer_len, g_tui->h);
+    tui_printf("%*s", g_tui->w - cursor_old, "");
+    tui_cursor_move(cursor_old, g_tui->h);
+
+    if (g_pager->selected_link_index < 0 ||
+        g_pager->selected_link_index >= g_pager->link_count)
+    {
+        // Don't print anything else
+        goto end;
+    }
+
+    // Convert selected URI to a string
+    char uri_name[URI_STRING_MAX];
+    uri_str(
+        &g_pager->links[g_pager->selected_link_index].uri,
+        uri_name,
+        g_tui->w,
+        URI_FLAGS_NONE);
+
+    // Print URI of the selected link after digits
+    tui_cursor_move(g_in->prompt_len + 1 + g_in->buffer_len, g_tui->h);
+    tui_printf(" (%s)", uri_name);
+
+    tui_cursor_move(cursor_old, g_tui->h);
+
+end:
+    tui_status_end();
+    tui_invalidate(INVALIDATE_PAGER_SELECTED_BIT);
+}
+
+/* Find next occurrance of search */
+void
+tui_search_next(void)
+{
+    const char *query = g_in->buffer;
+    size_t query_len = g_in->buffer_len;
+
+    // Do a linear search in the pager buffer from scroll position
+    for (int i = g_pager->scroll;
+        i < g_pager->buffer.line_count;
+        ++i)
+    {
+        struct pager_buffer_line *line = &g_pager->buffer.lines[i];
+
+        for (const char *c = line->s;
+            c < line->s + line->bytes;
+            ++c)
+        {
+            // TODO: regex + case-insensitivity
+            if (line->bytes - (c - line->s) < query_len ||
+                strncmp(c, query, query_len) != 0) continue;
+
+            // Found a match
+            g_pager->scroll = i;
+            tui_invalidate(INVALIDATE_PAGER_BIT);
+            return;
+        }
+    }
+
+    tui_status_begin();
+    tui_printf("Pattern not found: %s", query);
+    tui_status_end();
+}
+
+/* Find previous occurrance of search */
+void
+tui_search_prev(void)
+{
 }
 
 /* Goto a site */
