@@ -175,6 +175,8 @@ main(int argc, char **argv)
         "This is a test paragraph\n"
         "> This is a test blockquote that should also wrap pretty nice I reckon, blah blah blah\n"
         "> This is a test blockquote that should also wrap pretty nice I reckon, blah blah blah\n"
+        "This is a test paragraph\n"
+        "Stupidly long word here that hopefullywillgetdetectedbythesearchingalgorithmthingtestintetsfdidsifisdfidsifsdiihyphenationsrtiewroewirewoirweiriweiriweri\n"
         "This is a test paragraph\n";
 #endif
     if (argmode == CMD_ARGS_NONE)
@@ -183,6 +185,8 @@ main(int argc, char **argv)
         recv_buffer_check_size(g_recv->size);
         memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
         mime_parse(&g_recv->mime, MIME_GEMTEXT, strlen(MIME_GEMTEXT));
+        const char *DEFAULT_URI = "about:home";
+        g_state->uri = uri_parse(DEFAULT_URI, strlen(DEFAULT_URI));
 
         // Typeset the content
         pager_update_page(-1, 0);

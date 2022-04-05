@@ -2,11 +2,11 @@
 #include "uri.h"
 
 struct uri
-uri_parse(const char *uri, size_t uri_len)
+uri_parse(const char *uri, int uri_len)
 {
     struct uri result;
     memset(&result, 0, sizeof(struct uri));
-    if (!uri_len) return result;
+    if (uri_len <= 0) return result;
 
     // Find protocol:
     int colon_pos = strcspn(uri, ":");
@@ -62,12 +62,30 @@ uri_parse(const char *uri, size_t uri_len)
             uri + start_pos, (size_t)colon_pos - start_pos);
     }
 
+    // Get query location
+    int query_pos = strcspn(uri + path_pos, "?") + path_pos;
+
+    // Find fragment location if there is one.  Note we don't care about the
+    // fragment at all as we have no use for it; we only detect it to make sure
+    // it doesn't appear in path, query, etc.
+    int frag_pos = strcspn(uri + path_pos, "#") + path_pos;
+    int frag_len = max(uri_len - frag_pos, 0);
+
+    int query_len = max(uri_len - query_pos - frag_len, 0);
+    if (query_pos + 1 < uri_len)
+    {
+        int query_len_tmp = query_len;
+        if (frag_pos < uri_len) --query_len_tmp;
+        strncpy(result.query, uri + query_pos + 1, query_len_tmp);
+    }
+    // Adjust path length
+    int path_len = max(uri_len - frag_len - query_len - path_pos, 0);
+
     // Gopher-specific: it is common these days to prefix paths with the
     //                  resource item type,
     //                    e.g. gopher://foo.bar/0/a_text_file.txt
     //                  so we have to accomodate for this for some links to
     //                  work correctly
-    int path_len = max(uri_len - path_pos, 0);
     if (result.protocol == PROTOCOL_GOPHER)
     {
         enum gopher_item_type item = GOPHER_ITEM_UNSUPPORTED;
@@ -100,9 +118,10 @@ uri_parse(const char *uri, size_t uri_len)
         "  Protocol: %s\n"
         "  Host    : %s\n"
         "  Port    : %d\n"
-        "  Path    : %s\n",
+        "  Path    : %s\n"
+        "  Query   : %s\n",
         uri, PROTOCOL_NAMES[result.protocol],
-        result.hostname, result.port, result.path);
+        result.hostname, result.port, result.path, result.query);
 #endif
     return result;
 }
@@ -181,6 +200,16 @@ uri_str(
         gopher_item_prefix[0] = '\0';
     }
 
+    // Get query string
+    char query[URI_QUERY_MAX];
+    query[0] = '\0';
+    if (*uri->query && !(flags & URI_FLAGS_NO_QUERY_BIT))
+    {
+        query[0] = '?';
+        query[1] = '\0';
+        strncat(query, uri->query, URI_QUERY_MAX - 2);
+    }
+
     const char *fmt;
     if (!uri->port ||
         flags & URI_FLAGS_NO_PORT_BIT)
@@ -188,14 +217,15 @@ uri_str(
         fmt = "%s"   // Scheme
             "%s"     // Hostname
             "%s"     // Gopher item prefix
-            "%.*s";  // Path
+            "%.*s"   // Path
+            "%s";    // Query
         if (flags & URI_FLAGS_FANCY_BIT)
         {
             // Fancy mode escapes
             fmt = "\x1b[2m%s\x1b[0m"
                 "%s"
                 "%s"
-                "\x1b[2m%.*s\x1b[0m";
+                "\x1b[2m%.*s%s\x1b[0m";
         }
 
         // Print without port
@@ -204,7 +234,8 @@ uri_str(
             uri->hostname,
             gopher_item_prefix,
             path_len,
-            uri->path);
+            uri->path,
+            query);
     }
     else
     {
@@ -212,7 +243,8 @@ uri_str(
             "%s"     // Hostname
             ":%d"    // Port
             "%s"     // Gopher item prefix
-            "%.*s";  // Path
+            "%.*s"   // Path
+            "%s";    // Query
         if (flags & URI_FLAGS_FANCY_BIT)
         {
             // Fancy mode escapes
@@ -220,7 +252,7 @@ uri_str(
                 "%s"
                 ":%d"
                 "%s"
-                "\x1b[2m%.*s\x1b[0m";
+                "\x1b[2m%.*s%s\x1b[0m";
         }
 
         // Print with port
@@ -231,7 +263,8 @@ uri_str(
             uri->port,
             gopher_item_prefix,
             path_len,
-            uri->path);
+            uri->path,
+            query);
     }
 }
 
@@ -254,4 +287,59 @@ uri_abs(struct uri *restrict base, struct uri *restrict rel)
     char old_path[URI_PATH_MAX];
     strncpy(old_path, rel->path, URI_PATH_MAX);
     path_normalise(base->path, old_path, rel->path);
+}
+
+/* Set the query component of a URI in a properly encoded form */
+void
+uri_set_query(struct uri *restrict uri, const char *restrict q)
+{
+    //strncpy(uri->query, q, URI_QUERY_MAX);
+    uri_encode(uri->query, q, URI_QUERY_MAX);
+}
+
+/* Encode URI according to RFC 3986 */
+void
+uri_encode(
+    char *restrict o,
+    const char *restrict s,
+    size_t n)
+{
+    static bool rfc3986[256];
+
+    // Initialise encoder table
+    static bool is_uri_encoder_init = false;
+    if (!is_uri_encoder_init)
+    {
+        for (int i = 0; i < sizeof(rfc3986); ++i)
+        {
+            // Flags all characters that need to be percent-encoded
+            rfc3986[i] = isalnum(i) ||
+                i == '~' ||
+                i == '-' ||
+                i == '.' ||
+                i == '_';
+        }
+        is_uri_encoder_init = true;
+    }
+
+    char *end = o + n;
+    for (;
+        *s && o < end;
+        ++s)
+    {
+        // If this character is not flagged in the table; then just copy it
+        // directly
+        if (rfc3986[(unsigned char)*s])
+        {
+            *o++ = *s;
+            continue;
+        }
+
+        // Percent-encode the character
+        o += snprintf(o, end - o, "%%%02X", *s);
+    }
+
+    // Set null-terminator
+    if (o >= end) *end = '\0';
+    else *o = '\0';
 }

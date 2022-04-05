@@ -14,6 +14,9 @@ static enum tui_status buffer_caret_shift(int);
 static enum tui_status buffer_caret_shift_word(int, bool);
 static enum tui_status buffer_protocol_cycle(void);
 
+// Whether the current input prompt should not echo chars in plain text
+static bool is_sensitive = false;
+
 /* Move cursor to the caret position */
 static inline void
 buffer_caret_update(void)
@@ -25,17 +28,20 @@ void
 tui_input_prompt_begin(
     enum tui_input_mode mode,
     const char *prompt,
+    size_t prompt_len,
     const char *default_buffer,
     void(*cb_complete)(void))
 {
     g_tui->in_prompt = true;
     tui_status_begin();
 
+    is_sensitive = (mode == TUI_MODE_INPUT_SECRET);
+
     if (prompt)
     {
         // Print the prompt
-        g_in->prompt_len = strlen(prompt);
-        strcpy(g_in->prompt, prompt);
+        g_in->prompt_len = prompt_len ? prompt_len : strlen(prompt);
+        strncpy(g_in->prompt, prompt, g_in->prompt_len + 1);
         tui_say(g_in->prompt);
     }
     else
@@ -44,7 +50,7 @@ tui_input_prompt_begin(
         *g_in->prompt = '\0';
     }
 
-    if (default_buffer)
+    if (default_buffer && !is_sensitive)
     {
         // Apply default buffer if given
         g_in->buffer_len = strlen(default_buffer);
@@ -74,8 +80,10 @@ tui_input_prompt_begin(
 }
 
 void
-tui_input_prompt_end()
+tui_input_prompt_end(enum tui_input_mode mode_to_end)
 {
+    if (!g_tui->in_prompt || g_in->mode != mode_to_end) return;
+
     g_tui->in_prompt = false;
 
     // Hide the cursor
@@ -100,7 +108,7 @@ tui_input_prompt_text(const char *buf, ssize_t buf_len)
         g_in->buffer_len = 0;
     /* Ret and Esc: end of input */
     case '\n':
-        tui_input_prompt_end();
+        tui_input_prompt_end(g_in->mode);
         return TUI_OK;
 
     /* Handle backspaces */
@@ -159,7 +167,7 @@ tui_input_prompt_digit(const char *buf, ssize_t buf_len)
         g_in->buffer_len = 0;
     /* Ret: end of input */
     case '\n':
-        tui_input_prompt_end();
+        tui_input_prompt_end(g_in->mode);
         tui_status_clear();
         return TUI_OK;
 
@@ -211,7 +219,7 @@ tui_input_prompt_register(const char *buf, ssize_t buf_len)
 
 end:
     tui_status_clear();
-    tui_input_prompt_end();
+    tui_input_prompt_end(g_in->mode);
     return TUI_OK;
 }
 
@@ -254,7 +262,18 @@ buffer_insert(const char *buf, const ssize_t buf_len)
     // Print new string section
     tui_status_begin_soft();
     buffer_caret_update();
-    tui_printf("%s", g_in->buffer + g_in->caret);
+
+    if (!is_sensitive)
+    {
+        // Echo the new buffer
+        tui_printf("%s", g_in->buffer + g_in->caret);
+    }
+    else
+    {
+        // Echo asterisks
+        tui_printf("%*s", g_in->buffer_len - g_in->caret, "*");
+    }
+
     tui_status_end();
 
     // Update caret position
@@ -299,8 +318,16 @@ buffer_backspace(void)
     buffer_caret_update();
     if (g_in->caret < g_in->buffer_len)
     {
-        tui_printf("%s",
-            g_in->buffer + g_in->caret);
+        if (!is_sensitive)
+        {
+            // Echo the new buffer
+            tui_printf("%s", g_in->buffer + g_in->caret);
+        }
+        else
+        {
+            // Echo asterisks
+            tui_printf("%*s", g_in->buffer_len - g_in->caret, "*");
+        }
     }
     tui_say(" ");
     buffer_caret_update();
@@ -315,6 +342,16 @@ buffer_backspace_word(void)
 {
     // Can't backspace any more
     if (g_in->caret <= 0) return TUI_OK;
+
+    if (is_sensitive)
+    {
+        //return buffer_clear();
+        g_in->buffer_len = 0;
+        g_in->caret = 0;
+        g_in->buffer[g_in->buffer_len] = '\0';
+        tui_input_prompt_redraw_full();
+        return TUI_OK;
+    }
 
     /* Store the string that is to the left of last-deleted char */
     ssize_t section_len = g_in->buffer_len - g_in->caret;
@@ -405,8 +442,18 @@ buffer_caret_shift(int n)
 static enum tui_status
 buffer_caret_shift_word(int n, bool skip_first)
 {
-    bool is_path = false;
     int n_abs = abs(n), dir = sign(n);
+
+    if (is_sensitive)
+    {
+        // Sensitive just skips to begin/end of input
+        if (dir > 0) g_in->caret = g_in->buffer_len - 1;
+        else g_in->caret = 0;
+
+        return TUI_OK;
+    }
+
+    bool is_path = false;
     for (int x = 0; x < n_abs; ++x)
     {
         if (skip_first) is_path = !isalpha(g_in->buffer[g_in->caret - 1]);
@@ -449,7 +496,20 @@ tui_input_prompt_redraw_full(void)
 
     // Print the full status
     tui_status_begin();
-    tui_printf("%s%s", g_in->prompt, g_in->buffer);
+
+    if (!is_sensitive)
+    {
+        tui_printf("%s%s", g_in->prompt, g_in->buffer);
+    }
+    else
+    {
+        tui_printf("%s", g_in->prompt);
+        if (g_in->buffer_len > 0)
+        {
+            tui_printf("%*s", g_in->buffer_len, "*");
+        }
+    }
+
     tui_status_end();
 
     // Update caret
@@ -465,6 +525,8 @@ tui_input_prompt_redraw_full(void)
 static enum tui_status
 buffer_protocol_cycle(void)
 {
+    if (is_sensitive) return TUI_OK;
+
     // Protocols that we allow cycling through
     static const char *PROTOCOL_SWITCH_AVAILABLE[] =
     {

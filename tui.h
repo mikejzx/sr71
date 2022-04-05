@@ -57,8 +57,11 @@ void tui_select_next_link(void);
 void tui_select_prev_link(void);
 void tui_follow_selected_link(void);
 void tui_update_link_peek(void);
+void tui_search(void);
 void tui_search_next(void);
 void tui_search_prev(void);
+void tui_save_to_file(void);
+void tui_refresh_page(void);
 
 /* Move cursor */
 #define tui_cursor_move(x, y) \

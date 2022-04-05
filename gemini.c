@@ -3,6 +3,9 @@
 #include "state.h"
 #include "tofu.h"
 #include "tui.h"
+#include "tui_input_prompt.h"
+
+static void gemini_input_complete(void);
 
 void
 gemini_init(void)
@@ -156,11 +159,34 @@ gemini_request(struct uri *uri)
 
     if (response_header[0] != '3') gem->redirects = 0;
 
+    gem->last_uri_attempted = *uri;
+
     // Interpret response code
     switch(response_header[0])
     {
-        // Success code
-        case '2': ;
+        // INPUT code
+        case '1':;
+            // Read the input prompt that server gave us (in the <META> section
+            // of response)
+            size_t prompt_len = response_header_len - 2 - 1;
+            char prompt[1024];
+            strncpy(prompt, &response_header[2 + 1], sizeof(prompt) - 2);
+            strcat(prompt, ": ");
+            prompt_len += 2;
+
+            // Show the input prompt
+            tui_input_prompt_begin(
+                response_header[1] == '1'
+                    ? TUI_MODE_INPUT_SECRET
+                    : TUI_MODE_INPUT,
+                prompt, prompt_len,
+                NULL,
+                gemini_input_complete);
+
+            break;
+
+        // SUCCESS code
+        case '2':;
             char chunk[512];
             size_t recv_bytes = 0;
 
@@ -202,7 +228,7 @@ gemini_request(struct uri *uri)
             ret_status = 0;
             break;
 
-        // Redirect code
+        // REDIRECT code
         case '3': ;
             // Get URI (position in response header is fixed)
             const char *redirect_uri_str = response_header + strlen("XX ");
@@ -255,4 +281,14 @@ fail:
     gem->sock = 0;
 
     return ret_status;
+}
+
+/* Input prompt completion callback */
+static void
+gemini_input_complete(void)
+{
+    // Repeat request to the same URI, but with the input the query component
+    struct uri uri = g_state->gem.last_uri_attempted;
+    uri_set_query(&uri, g_in->buffer);
+    tui_go_to_uri(&uri, true, true);
 }

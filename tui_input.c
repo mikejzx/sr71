@@ -21,7 +21,7 @@ static const struct tui_input_handler
     [TUI_MODE_NORMAL]       = { tui_input_normal          },
     [TUI_MODE_COMMAND]      = { NULL                      },
     [TUI_MODE_INPUT]        = { tui_input_prompt_text     },
-    [TUI_MODE_INPUT_SECRET] = { NULL                      },
+    [TUI_MODE_INPUT_SECRET] = { tui_input_prompt_text     },
     [TUI_MODE_LINKS]        = { tui_input_links           },
     [TUI_MODE_MARK_SET]     = { tui_input_prompt_register },
     [TUI_MODE_MARK_FOLLOW]  = { tui_input_prompt_register },
@@ -189,7 +189,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     case 'o':
         tui_input_prompt_begin(
             TUI_MODE_INPUT,
-            "go: ",
+            "go: ", 0,
             "gemini://",
             tui_go_from_input);
         return TUI_OK;
@@ -215,7 +215,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
         uri_str(uri, uristr, sizeof(uristr), 0);
         tui_input_prompt_begin(
             TUI_MODE_INPUT,
-            "go: ",
+            "go: ", 0,
             uristr,
             tui_go_from_input);
     } return TUI_OK;
@@ -223,7 +223,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     // 'f' or Ret to follow selected link
     case 'f':
         tui_follow_selected_link();
-        tui_input_prompt_end();
+        tui_input_prompt_end(TUI_MODE_NORMAL);
         return TUI_OK;
 
     /* '.' to go to parent directory */
@@ -250,9 +250,18 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
 
     // 'r' to refresh
     case 'r':
-    {
-        // TODO
-    } return TUI_OK;
+        tui_refresh_page();
+        return TUI_OK;
+
+    // 'S' to save page to an explicit path (despite it being in cache if disk
+    // cache is enabled)
+    case 'S':
+        tui_input_prompt_begin(
+            TUI_MODE_INPUT,
+            "Save document as: ", 0,
+            NULL,
+            tui_save_to_file);
+        break;
 
     // ',' history backward
     case ',':
@@ -284,14 +293,14 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     case 'm':
         tui_input_prompt_begin(
             TUI_MODE_MARK_SET,
-            "set mark: ",
+            "set mark: ", 0,
             NULL,
             tui_set_mark_from_input);
         return TUI_OK;
     case '\'':
         tui_input_prompt_begin(
             TUI_MODE_MARK_FOLLOW,
-            "goto mark: ",
+            "goto mark: ", 0,
             NULL,
             tui_goto_mark_from_input);
         return TUI_OK;
@@ -308,8 +317,8 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     case '8':
     case '9':
     // Also includes 'n' and 'p' for next/previous
-    case 'n':
-    case 'p':
+    //case 'n':
+    //case 'p':
         // Skip if no links in the page
         if (!g_pager->link_count) return TUI_OK;
 
@@ -325,7 +334,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
         // Show the prompt
         tui_input_prompt_begin(
             TUI_MODE_LINKS,
-            "follow link: ",
+            "follow link: ", 0,
             is_digit ? b : NULL,
             NULL);
 
@@ -375,10 +384,13 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     case '/':
         tui_input_prompt_begin(
             TUI_MODE_SEARCH,
-            "search: ",
+            "search: ", 0,
             "",
-            tui_search_next);
+            tui_search);
         return TUI_OK;
+    /* 'n' for next search item */
+    case 'n': tui_search_next(); return TUI_OK;
+    case 'N': tui_search_prev(); return TUI_OK;
     }
 
     return TUI_UNHANDLED;
@@ -398,7 +410,7 @@ tui_input_links(const char *buf, const ssize_t buf_len)
     // 'f' or Ret to follow selected link
     case 'f':
         tui_follow_selected_link();
-        tui_input_prompt_end();
+        tui_input_prompt_end(TUI_MODE_LINKS);
         return TUI_OK;
 
     // 'n' and 'p' to increment/decrement link index
@@ -429,7 +441,7 @@ tui_input_links(const char *buf, const ssize_t buf_len)
     case '/':
         tui_input_prompt_begin(
             TUI_MODE_SEARCH,
-            "search: ",
+            "search: ", 0,
             "",
             tui_search_next);
         return TUI_OK;

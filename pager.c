@@ -30,6 +30,11 @@ pager_init(void)
     g_pager->link_capacity = 10;
     g_pager->links = malloc(g_pager->link_capacity * sizeof(struct pager_link));
 
+    g_pager->search.match_count = 0;
+    g_pager->search.match_capacity = 1024;
+    g_pager->search.matches =
+        malloc(sizeof(struct search_match) * g_pager->search.match_capacity);
+
     typesetter_init(&g_pager->typeset);
 }
 
@@ -81,6 +86,7 @@ pager_deinit(void)
     {
         free(g_pager->visible_buffer_prev.rows);
     }
+    free(g_pager->search.matches);
     free(g_pager->buffer.b);
     free(g_pager->buffer.lines);
     typesetter_deinit(&g_pager->typeset);
@@ -89,15 +95,18 @@ pager_deinit(void)
 void
 pager_resized(void)
 {
-    // If width didn't change then we don't need to do anything
-    // TODO
-
     // Pager takes up whole screen except bottom two rows (for status line)
     int pager_height = max(g_tui->h - 2, 1);
+
+    bool width_changed = g_pager->visible_buffer.w != g_tui->w;
 
     // Allocate visible buffers (if not already allocated)
     pager_alloc_visible_buffer(&g_pager->visible_buffer, pager_height);
     pager_alloc_visible_buffer(&g_pager->visible_buffer_prev, pager_height);
+
+    // Don't need to do anything else unless width had changed (as width
+    // affects word-wrapping, etc.)
+    if (!width_changed) return;
 
     // For restoring scroll position after the resize.
     int scroll_raw_index = 0;

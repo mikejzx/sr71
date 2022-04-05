@@ -6,7 +6,9 @@
 #define URI_HOSTNAME_MAX 256
 #define URI_PATH_MAX 512
 #define PROTOCOL_NAME_MAX 16
-#define URI_STRING_MAX (URI_HOSTNAME_MAX + URI_PATH_MAX + PROTOCOL_NAME_MAX + 7)
+#define URI_QUERY_MAX (256 - PROTOCOL_NAME_MAX)
+#define URI_STRING_MAX \
+    (URI_HOSTNAME_MAX + URI_PATH_MAX + PROTOCOL_NAME_MAX + URI_QUERY_MAX)
 
 enum uri_protocol
 {
@@ -73,6 +75,9 @@ enum uri_string_flags
 
     // Do not include Gopher item type on Gopher URIs
     URI_FLAGS_NO_GOPHER_ITEM_BIT = 16,
+
+    // Do not include query
+    URI_FLAGS_NO_QUERY_BIT = 32,
 };
 
 struct uri
@@ -85,13 +90,14 @@ struct uri
     char hostname[URI_HOSTNAME_MAX];
     int port;
     char path[URI_PATH_MAX];
+    char query[URI_QUERY_MAX];
 
     // Gopher item type.  It's very convenient to store this here and keeps
     // stuff a bit cleaner
     enum gopher_item_type gopher_item;
 };
 
-struct uri uri_parse(const char *, size_t);
+struct uri uri_parse(const char *, int);
 
 size_t uri_str(
     const struct uri *restrict const,
@@ -100,6 +106,10 @@ size_t uri_str(
     enum uri_string_flags);
 
 void uri_abs(struct uri *restrict, struct uri *restrict);
+
+void uri_set_query(struct uri *restrict, const char *restrict);
+
+void uri_encode(char *restrict, const char *restrict, size_t);
 
 static inline int
 uri_cmp(

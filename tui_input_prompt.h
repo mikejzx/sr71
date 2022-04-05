@@ -10,8 +10,8 @@
  */
 
 void tui_input_prompt_begin(
-    enum tui_input_mode, const char *, const char *, void(*)(void));
-void tui_input_prompt_end(void);
+    enum tui_input_mode, const char *, size_t, const char *, void(*)(void));
+void tui_input_prompt_end(enum tui_input_mode);
 
 // Actual input handlers
 enum tui_status tui_input_prompt_text(const char *, ssize_t);

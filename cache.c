@@ -331,6 +331,9 @@ cache_find(
 {
     g_recv->b_alt = NULL;
 
+    // For now we don't cache pages that have a URI query
+    if (*uri->query) return false;
+
     // See if we have the URI cached in memory already
     for (int i = 0; i < s_cache.count; ++i)
     {
@@ -367,7 +370,8 @@ cache_find(
         sizeof(uri_string),
         URI_FLAGS_NO_PORT_BIT |
             URI_FLAGS_NO_TRAILING_SLASH_BIT |
-            URI_FLAGS_NO_GOPHER_ITEM_BIT);
+            URI_FLAGS_NO_GOPHER_ITEM_BIT |
+            URI_FLAGS_NO_QUERY_BIT);
 
     /* Read the metadata file */
     if (!(fp = fopen(PATH_META, "r")))
@@ -497,6 +501,9 @@ cache_push_current(void)
 {
     struct cached_item *item = NULL;
 
+    // For now we don't cache pages that have a URI query
+    if (*g_state->uri.query) return NULL;
+
     // Check if the URI is in the cache already; so we can update it
     for (int i = 0; i < s_cache.count; ++i)
     {
@@ -538,7 +545,8 @@ cache_push_current(void)
         sizeof(item->uristr),
         URI_FLAGS_NO_PORT_BIT |
             URI_FLAGS_NO_TRAILING_SLASH_BIT |
-            URI_FLAGS_NO_GOPHER_ITEM_BIT);
+            URI_FLAGS_NO_GOPHER_ITEM_BIT |
+            URI_FLAGS_NO_QUERY_BIT);
 
     // Generate a SHA256 hash of the content.  The algorithm used shouldn't
     // matter too much, as it's literally only used to detect changes in file

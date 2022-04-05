@@ -2,6 +2,7 @@
 #define TYPESETTER_H
 
 struct pager_buffer;
+struct pager_buffer_line;
 struct mime;
 
 /*
@@ -13,7 +14,7 @@ struct mime;
 
 struct typesetter
 {
-    // And lines; their strings point to the raw buffer above
+    // These lines point to the raw buffer itself
     struct pager_buffer_line *raw_lines;
     size_t raw_line_count;
 };

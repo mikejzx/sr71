@@ -25,7 +25,4 @@ size_t utf8_size_w_formats(const char *, size_t);
 
 int connect_socket_to(const char *, int port);
 
-static inline bool
-is_alphanumeric(char buf) { return isalpha(buf) || isdigit(buf); }
-
 #endif

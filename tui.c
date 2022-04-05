@@ -265,44 +265,220 @@ end:
     tui_invalidate(INVALIDATE_PAGER_SELECTED_BIT);
 }
 
-/* Find next occurrance of search */
 void
-tui_search_next(void)
+tui_search(void)
 {
-    const char *query = g_in->buffer;
-    size_t query_len = g_in->buffer_len;
+    struct search *const s = &g_pager->search;
 
-    // Do a linear search in the pager buffer from scroll position
-    for (int i = g_pager->scroll;
-        i < g_pager->buffer.line_count;
-        ++i)
+    // Update query
+    strncpy(s->query, g_in->buffer, sizeof(g_pager->search.query));
+    s->query_len = g_in->buffer_len;
+
+    s->match_count = 0;
+
+    // Search for all matches in the buffer itself
+    for (int i = 0; i < g_pager->buffer.line_count; ++i)
     {
         struct pager_buffer_line *line = &g_pager->buffer.lines[i];
 
+        // Simple linear search for the string
         for (const char *c = line->s;
             c < line->s + line->bytes;
             ++c)
         {
             // TODO: regex + case-insensitivity
-            if (line->bytes - (c - line->s) < query_len ||
-                strncmp(c, query, query_len) != 0) continue;
+            // For now we only search without considering wrapped words
+            if (line->bytes - (c - line->s) < s->query_len ||
+                strncmp(c, s->query, s->query_len) != 0) continue;
 
-            // Found a match
-            g_pager->scroll = i;
-            tui_invalidate(INVALIDATE_PAGER_BIT);
-            return;
+            s->matches[s->match_count++] = (struct search_match)
+            {
+                .begin =
+                {
+                    .line = i,
+                    .loc = c
+                },
+                .end =
+                {
+                    .line = i,
+                    .loc = c + s->query_len
+                },
+            };
+
+            // This is really tricky; need to determine if a word matches even
+            // if it crosses the line due to hyphenation...
+            // TODO solve this problem
         }
     }
 
+    s->invalidated = false;
+    s->index = 0;
+
+    if (s->match_count == 0)
+    {
+        tui_status_say("Pattern not found");
+        return;
+    }
+
+    // Go to next search item
+    tui_search_next();
+}
+
+/* Find next occurrance of search query from scroll point */
+void
+tui_search_next(void)
+{
+    struct search *const s = &g_pager->search;
+
+    if (s->match_count == 0)
+    {
+        tui_status_say("Pattern not found");
+        return;
+    }
+
+    // Wrap search
+    int search_pos = (s->index == s->match_count - 1) ? 0 : g_pager->scroll;
+
+    for (int i = 0; i < s->match_count; ++i)
+    {
+        if (s->matches[i].begin.line >= search_pos)
+        {
+            if (s->index == i)
+            {
+                // Check if there's any other matches on this line we could use
+                // instead
+                for (int j = i + 1; j < s->match_count; ++j)
+                {
+                    if (s->matches[i].begin.line == search_pos)
+                    {
+                        i = j;
+                        break;
+                    }
+                }
+            }
+
+            s->index = i;
+            g_pager->scroll = s->matches[i].begin.line;
+            break;
+        }
+    }
+
+    tui_invalidate(INVALIDATE_PAGER_BIT);
+
     tui_status_begin();
-    tui_printf("Pattern not found: %s", query);
+    tui_printf("match %u/%u", s->index + 1, s->match_count);
     tui_status_end();
 }
 
-/* Find previous occurrance of search */
+/* Find previous occurrance of search query from scroll point */
 void
 tui_search_prev(void)
 {
+    struct search *const s = &g_pager->search;
+
+    if (s->match_count == 0)
+    {
+        tui_status_say("Pattern not found");
+        return;
+    }
+
+    // Wrap the search
+    int search_pos = (s->index == 0) ?
+        (g_pager->buffer.line_count - 1) : g_pager->scroll;
+
+    for (int i = s->match_count - 1; i > -1; --i)
+    {
+        if (s->matches[i].begin.line <= search_pos)
+        {
+            if (s->index == i)
+            {
+                // Check if there's any other matches on this line we could use
+                // instead
+                for (int j = i - 1; j > -1; --j)
+                {
+                    if (s->matches[i].begin.line == search_pos)
+                    {
+                        i = j;
+                        break;
+                    }
+                }
+            }
+
+            s->index = i;
+            g_pager->scroll = s->matches[i].begin.line;
+            break;
+        }
+    }
+
+    tui_invalidate(INVALIDATE_PAGER_BIT);
+
+    tui_status_begin();
+    tui_printf("match %u/%u", s->index + 1, s->match_count);
+    tui_status_end();
+}
+
+void
+tui_save_to_file(void)
+{
+    FILE *fp = fopen(g_in->buffer, "w");
+    if (!fp)
+    {
+        tui_status_begin();
+        tui_printf("Failed to open file '%s'", g_in->buffer);
+        tui_status_end();
+        return;
+    }
+
+    const char *buffer = g_recv->b_alt ? g_recv->b_alt : g_recv->b;
+    size_t buffer_size = g_recv->size;
+
+    fwrite(buffer, buffer_size, 1, fp);
+
+    fclose(fp);
+
+    tui_status_begin();
+    tui_say("Wrote ");
+    tui_print_size(buffer_size);
+    tui_printf(" to '%s'", g_in->buffer);
+    tui_status_end();
+}
+
+void
+tui_refresh_page(void)
+{
+#if CACHE_USE_DISK
+    // Store old checksum of buffer if this is a cached page
+    unsigned char old_hash[EVP_MAX_MD_SIZE];
+    unsigned old_hash_len = 0;
+
+    if (g_pager->cached_page &&
+        uri_cmp_notrailing(&g_pager->cached_page->uri, &g_state->uri) == 0)
+    {
+        old_hash_len = g_pager->cached_page->hash_len;
+        memcpy(old_hash, g_pager->cached_page->hash, old_hash_len);
+    }
+#endif
+
+    int status = tui_go_to_uri(&g_state->uri, false, true);
+
+#if CACHE_USE_DISK
+    if (status == 0 &&
+        old_hash_len)
+    {
+        // Check if hashes match
+        if (old_hash_len == g_pager->cached_page->hash_len &&
+            memcmp(old_hash, g_pager->cached_page->hash, old_hash_len) == 0)
+        {
+            tui_status_say("content unchanged since last cache");
+        }
+        else
+        {
+            tui_status_say("new content since last cache");
+        }
+    }
+#else
+    (void)status;
+#endif
 }
 
 /* Goto a site */
@@ -340,6 +516,9 @@ tui_go_to_uri(
     int success;
     bool do_cache = false;
     struct cached_item *cache_item = NULL;
+
+    // For now we don't cache pages that have a URI query
+    if (*uri.query) force_nocache = true;
 
     // Handle protocol/requests
     switch (uri.protocol)

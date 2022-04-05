@@ -1,7 +1,7 @@
 #ifndef GEMINI_H
 #define GEMINI_H
 
-struct uri;
+#include "uri.h"
 
 /*
  * gemini.h
@@ -19,6 +19,9 @@ struct gemini
 
     // Consecutive redirect count
     int redirects;
+
+    // Last attempted URI to access
+    struct uri last_uri_attempted;
 };
 
 void gemini_init(void);

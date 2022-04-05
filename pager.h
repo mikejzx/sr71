@@ -98,6 +98,42 @@ struct pager_state
 
     // If the buffer is from the cache; this is a pointer to the item itself
     struct cached_item *cached_page;
+
+    // Searching
+    struct search
+    {
+        // The last search query performed
+        char query[256];
+        unsigned query_len;
+
+        // Current list of search matches.
+        struct search_match
+        {
+            // We store the range where the match begins/ends
+            struct
+            {
+                // Index in the *typeset* buffer where the match was found.  We
+                // use the typeset buffer rather than the raw one because the
+                // raw one creates way too many issues to try and deal with
+                // (i.e. unformatted text is present, and it's a royal pain in
+                // the ass to work out where the match is in the typeset buffer
+                // to highlight it)
+                unsigned line;
+
+                // Location of the beginning/end in the line's buffer pointer
+                const char *loc;
+            } begin, end;
+        } *matches;
+        unsigned match_count;
+        unsigned match_capacity;
+
+        // Whether the match locations need to be updated due to the typeset
+        // buffer changing (e.g. on window width resize)
+        bool invalidated;
+
+        // Index of most recent match (e.g. via 'n'/'N' keys)
+        int index;
+    } search;
 };
 
 extern struct pager_state *g_pager;
