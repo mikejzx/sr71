@@ -229,6 +229,8 @@ typeset_gemtext(
         line->raw_index = raw_index; \
         line->raw_dist = 0; \
         line->is_heading = false; \
+        line->is_hyphenated = false; \
+        line->indent = 0; \
     } while(0)
 #define LINE_FINISH() \
     do \
@@ -252,8 +254,9 @@ typeset_gemtext(
     { \
         int indent_amount = gemtext.indent + \
             ((do_hang) ? gemtext.hang : 0); \
-        BUFFER_CHECK_SIZE(indent_amount); \
-        LINE_PRINTF("%*s", indent_amount, ""); \
+        line->indent = indent_amount; \
+        /*BUFFER_CHECK_SIZE(indent_amount); */\
+        /*LINE_PRINTF("%*s", indent_amount, ""); */\
     } while(0)
 #define LINE_STRNCPY(str, len) \
     do \
@@ -316,6 +319,7 @@ typeset_gemtext(
         gemtext.raw_dist = 0;
         gemtext.hang = 0;
         gemtext.indent = 1;
+        line->indent = 1;
         gemtext.esc = NULL;
         gemtext.esc_len = 0;
         *gemtext.prefix = 0;
@@ -638,16 +642,18 @@ typeset_gemtext(
 
                         // Hyphenate the next section of the word
                         LINE_STRNCPY_LIT("-");
+                        line->is_hyphenated = true;
 
                         c_prev += chars_count;
                     }
 
                     // Clear the escape to make clearing text a bit cleaner
-                    LINE_STRNCPY_LIT("\x1b[0m");
+                    //LINE_STRNCPY_LIT("\x1b[0m");
 
                     // Start next line
                     LINE_FINISH();
                     chars_this_column = gemtext.indent + gemtext.hang;
+                    //chars_this_column = 0;
                     LINE_START();
                     LINE_INDENT(true);
 
@@ -678,7 +684,7 @@ typeset_gemtext(
 
         if (gemtext.need_clear_esc)
         {
-            LINE_STRNCPY_LIT("\x1b[0m");
+            //LINE_STRNCPY_LIT("\x1b[0m");
             gemtext.need_clear_esc = false;
             gemtext.esc = NULL;
             gemtext.esc_len = 0;

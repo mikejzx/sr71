@@ -50,9 +50,9 @@ tui_init(void)
     tui_say("\x1b[?25l");
     tui_cursor_move(0, 0);
 
-    tui_resized();
-
     tui_input_init();
+
+    tui_resized();
 }
 
 void
@@ -266,15 +266,20 @@ end:
 }
 
 void
-tui_search(void)
+tui_search_refresh(void)
 {
     struct search *const s = &g_pager->search;
 
-    // Update query
-    strncpy(s->query, g_in->buffer, sizeof(g_pager->search.query));
+    s->match_count = 0;
+    s->invalidated = false;
     s->query_len = g_in->buffer_len;
 
-    s->match_count = 0;
+    if (!s->query_len) return;
+
+    strncpy(s->query, g_in->buffer, sizeof(g_pager->search.query));
+    s->query[s->query_len] = '\0';
+
+    struct search_match match;
 
     // Search for all matches in the buffer itself
     for (int i = 0; i < g_pager->buffer.line_count; ++i)
@@ -286,32 +291,25 @@ tui_search(void)
             c < line->s + line->bytes;
             ++c)
         {
-            // TODO: regex + case-insensitivity
-            // For now we only search without considering wrapped words
-            if (line->bytes - (c - line->s) < s->query_len ||
-                strncmp(c, s->query, s->query_len) != 0) continue;
+            //if (line->bytes - (c - line->s) < s->query_len ||
+            //    strncmp(c, s->query, s->query_len) != 0) continue;
+
+            // Check for match using our special search function
+            if (pager_multiline_search(
+                c, s->query, &g_pager->buffer, i, &match) != 0) continue;
 
             s->matches[s->match_count++] = (struct search_match)
             {
                 .begin =
                 {
                     .line = i,
-                    .loc = c
+                    .loc = c,
                 },
-                .end =
-                {
-                    .line = i,
-                    .loc = c + s->query_len
-                },
+                .end = match.end
             };
-
-            // This is really tricky; need to determine if a word matches even
-            // if it crosses the line due to hyphenation...
-            // TODO solve this problem
         }
     }
 
-    s->invalidated = false;
     s->index = 0;
 
     if (s->match_count == 0)
@@ -319,102 +317,37 @@ tui_search(void)
         tui_status_say("Pattern not found");
         return;
     }
+}
 
-    // Go to next search item
+void
+tui_search_refresh_forward(void)
+{
+    g_pager->search.reverse = false;
+    tui_search_refresh();
     tui_search_next();
 }
 
-/* Find next occurrance of search query from scroll point */
+void
+tui_search_refresh_reverse(void)
+{
+    g_pager->search.reverse = true;
+    tui_search_refresh();
+    g_pager->search.index = max(g_pager->search.match_count - 1, 0);
+    tui_search_prev();
+}
+
 void
 tui_search_next(void)
 {
-    struct search *const s = &g_pager->search;
-
-    if (s->match_count == 0)
-    {
-        tui_status_say("Pattern not found");
-        return;
-    }
-
-    // Wrap search
-    int search_pos = (s->index == s->match_count - 1) ? 0 : g_pager->scroll;
-
-    for (int i = 0; i < s->match_count; ++i)
-    {
-        if (s->matches[i].begin.line >= search_pos)
-        {
-            if (s->index == i)
-            {
-                // Check if there's any other matches on this line we could use
-                // instead
-                for (int j = i + 1; j < s->match_count; ++j)
-                {
-                    if (s->matches[i].begin.line == search_pos)
-                    {
-                        i = j;
-                        break;
-                    }
-                }
-            }
-
-            s->index = i;
-            g_pager->scroll = s->matches[i].begin.line;
-            break;
-        }
-    }
-
-    tui_invalidate(INVALIDATE_PAGER_BIT);
-
-    tui_status_begin();
-    tui_printf("match %u/%u", s->index + 1, s->match_count);
-    tui_status_end();
+    if (g_pager->search.reverse) pager_search_prev();
+    else pager_search_next();
 }
 
-/* Find previous occurrance of search query from scroll point */
 void
 tui_search_prev(void)
 {
-    struct search *const s = &g_pager->search;
-
-    if (s->match_count == 0)
-    {
-        tui_status_say("Pattern not found");
-        return;
-    }
-
-    // Wrap the search
-    int search_pos = (s->index == 0) ?
-        (g_pager->buffer.line_count - 1) : g_pager->scroll;
-
-    for (int i = s->match_count - 1; i > -1; --i)
-    {
-        if (s->matches[i].begin.line <= search_pos)
-        {
-            if (s->index == i)
-            {
-                // Check if there's any other matches on this line we could use
-                // instead
-                for (int j = i - 1; j > -1; --j)
-                {
-                    if (s->matches[i].begin.line == search_pos)
-                    {
-                        i = j;
-                        break;
-                    }
-                }
-            }
-
-            s->index = i;
-            g_pager->scroll = s->matches[i].begin.line;
-            break;
-        }
-    }
-
-    tui_invalidate(INVALIDATE_PAGER_BIT);
-
-    tui_status_begin();
-    tui_printf("match %u/%u", s->index + 1, s->match_count);
-    tui_status_end();
+    if (g_pager->search.reverse) pager_search_next();
+    else pager_search_prev();
 }
 
 void
@@ -539,6 +472,8 @@ tui_go_to_uri(
 
         if (success == 0)
         {
+            tui_input_prompt_end(g_in->mode);
+
             tui_status_begin();
             tui_printf("Loaded content from %s, ", uri.hostname);
             tui_print_size(g_recv->size);
@@ -555,6 +490,8 @@ tui_go_to_uri(
 
         if (success == 0)
         {
+            tui_input_prompt_end(g_in->mode);
+
             tui_status_begin();
             if (is_dir)
             {
@@ -576,6 +513,8 @@ tui_go_to_uri(
 
     if (success == 0)
     {
+        tui_input_prompt_end(g_in->mode);
+
         // Update the last selection/scroll of last cached page
         if (g_pager->cached_page)
         {

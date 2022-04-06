@@ -33,6 +33,13 @@ struct pager_buffer_line
     // NOTE: if we have any more bools like this in future this should become
     // a bitfield enum
     bool is_heading;
+
+    // Whether this line ends on a word hyphenated by the line breaking
+    // algorithm (used for search functionality)
+    bool is_hyphenated;
+
+    // Line indent level
+    int indent;
 };
 
 struct pager_buffer
@@ -133,6 +140,9 @@ struct pager_state
 
         // Index of most recent match (e.g. via 'n'/'N' keys)
         int index;
+
+        // Whether we are searching in reverse (via '?')
+        bool reverse;
     } search;
 };
 
@@ -151,5 +161,13 @@ void pager_update_page(int, int);
 void pager_select_first_link_visible(void);
 void pager_select_last_link_visible(void);
 void pager_check_link_capacity(void);
+void pager_search_next(void);
+void pager_search_prev(void);
+int pager_multiline_search(
+    const char *restrict,
+    const char *restrict,
+    struct pager_buffer *restrict,
+    int,
+    struct search_match *);
 
 #endif

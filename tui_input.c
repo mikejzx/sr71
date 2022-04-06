@@ -5,6 +5,11 @@
 #include "tui_input.h"
 #include "tui_input_prompt.h"
 
+#define INCHAR_LINK_NEXT 'l'
+#define INCHAR_LINK_PREV 'h'
+#define INCHAR_LINK_NEXT_ALT 'a'
+#define INCHAR_LINK_PREV_ALT 'x'
+
 struct tui_input *g_in;
 
 static enum tui_status tui_input_normal(const char *, const ssize_t);
@@ -49,9 +54,10 @@ static const struct movement_char
     [0100 ^ 'E'] = { pager_scroll,  1, 0 },
     ['k']        = { pager_scroll, -1, 0 },
     [0100 ^ 'Y'] = { pager_scroll, -1, 0 },
-    // u/d (Ctrl+D, Ctrl+U) for half page up/down
+    // u/d (Ctrl+D, Ctrl+U) or Space for half page up/down
     ['d']        = { pager_scroll,  1, MOVEMENT_INPUT_HALF_PAGE },
     [0100 ^ 'D'] = { pager_scroll,  1, MOVEMENT_INPUT_HALF_PAGE },
+    [' ']        = { pager_scroll,  1, MOVEMENT_INPUT_HALF_PAGE },
     ['u']        = { pager_scroll, -1, MOVEMENT_INPUT_HALF_PAGE },
     [0100 ^ 'U'] = { pager_scroll, -1, MOVEMENT_INPUT_HALF_PAGE },
     // Ctrl+F/Ctrl+B for full page up/down
@@ -168,64 +174,9 @@ tui_input_common(const char *buf, const ssize_t buf_len)
         return TUI_OK;
     }
 
-    return TUI_UNHANDLED;
-}
-
-// Handle normal mode input
-static enum tui_status
-tui_input_normal(const char *buf, const ssize_t buf_len)
-{
-    // Apply common handlers
-    if (tui_input_common(buf, buf_len) == TUI_OK) return TUI_OK;
-
-    // Chars specific to Normal mode
-    const char c = *buf;
-    switch(c)
+    // And a big ol' switch block of the nice other stuff
+    switch (c)
     {
-    /* 'q' to quit */
-    case 'q': return TUI_QUIT;
-
-    /* 'o' to enter a URI */
-    case 'o':
-        tui_input_prompt_begin(
-            TUI_MODE_INPUT,
-            "go: ", 0,
-            "gemini://",
-            tui_go_from_input);
-        return TUI_OK;
-
-    /* 'e' to edit current URI */
-    case 'e':
-    {
-        // Get URI to edit
-        struct uri *uri;
-        if (g_pager->selected_link_index < 0 ||
-            g_pager->selected_link_index >= g_pager->link_count)
-        {
-            // Use current page URI
-            uri = &g_state->uri;
-        }
-        else
-        {
-            // Use selected link URI
-            uri = &g_pager->links[g_pager->selected_link_index].uri;
-        }
-
-        char uristr[URI_STRING_MAX];
-        uri_str(uri, uristr, sizeof(uristr), 0);
-        tui_input_prompt_begin(
-            TUI_MODE_INPUT,
-            "go: ", 0,
-            uristr,
-            tui_go_from_input);
-    } return TUI_OK;
-
-    // 'f' or Ret to follow selected link
-    case 'f':
-        tui_follow_selected_link();
-        tui_input_prompt_end(TUI_MODE_NORMAL);
-        return TUI_OK;
-
     /* '.' to go to parent directory */
     case '.':
     {
@@ -305,6 +256,86 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
             tui_goto_mark_from_input);
         return TUI_OK;
 
+    // '/' or '?' to enter search mode (latter for reverse)
+    case '/':
+        tui_input_prompt_begin(
+            TUI_MODE_SEARCH,
+            "/", 0,
+            NULL,
+            tui_search_refresh_forward);
+        return TUI_OK;
+    case '?':
+        tui_input_prompt_begin(
+            TUI_MODE_SEARCH,
+            "?", 0,
+            NULL,
+            tui_search_refresh_reverse);
+        return TUI_OK;
+    /* 'n'/'N' for next/prev search item */
+    case 'n': tui_search_next(); return TUI_OK;
+    case 'N': tui_search_prev(); return TUI_OK;
+
+    default: break;
+    }
+
+    return TUI_UNHANDLED;
+}
+
+// Handle normal mode input
+static enum tui_status
+tui_input_normal(const char *buf, const ssize_t buf_len)
+{
+    // Apply common handlers
+    if (tui_input_common(buf, buf_len) == TUI_OK) return TUI_OK;
+
+    // Chars specific to Normal mode
+    const char c = *buf;
+    switch(c)
+    {
+    /* 'q' to quit */
+    case 'q': return TUI_QUIT;
+
+    /* 'o' to enter a URI */
+    case 'o':
+        tui_input_prompt_begin(
+            TUI_MODE_INPUT,
+            "go: ", 0,
+            "gemini://",
+            tui_go_from_input);
+        return TUI_OK;
+
+    /* 'e' to edit current URI */
+    case 'e':
+    {
+        // Get URI to edit
+        struct uri *uri;
+        if (g_pager->selected_link_index < 0 ||
+            g_pager->selected_link_index >= g_pager->link_count)
+        {
+            // Use current page URI
+            uri = &g_state->uri;
+        }
+        else
+        {
+            // Use selected link URI
+            uri = &g_pager->links[g_pager->selected_link_index].uri;
+        }
+
+        char uristr[URI_STRING_MAX];
+        uri_str(uri, uristr, sizeof(uristr), 0);
+        tui_input_prompt_begin(
+            TUI_MODE_INPUT,
+            "go: ", 0,
+            uristr,
+            tui_go_from_input);
+    } return TUI_OK;
+
+    // 'f' or Ret to follow selected link
+    case 'f':
+        tui_follow_selected_link();
+        tui_input_prompt_end(TUI_MODE_NORMAL);
+        return TUI_OK;
+
     // Digits to enter link mode
     case '0':
     case '1':
@@ -316,13 +347,16 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     case '7':
     case '8':
     case '9':
-    // Also includes 'n' and 'p' for next/previous
-    //case 'n':
-    //case 'p':
+    case INCHAR_LINK_NEXT:
+    case INCHAR_LINK_PREV:
+    case INCHAR_LINK_NEXT_ALT:
+    case INCHAR_LINK_PREV_ALT:
         // Skip if no links in the page
         if (!g_pager->link_count) return TUI_OK;
 
-        bool is_digit = *buf != 'n' && *buf != 'p';
+        bool is_digit = *buf !=
+            INCHAR_LINK_NEXT && *buf != INCHAR_LINK_PREV &&
+            INCHAR_LINK_NEXT_ALT && *buf != INCHAR_LINK_PREV_ALT;
 
         char b[2];
         if (is_digit)
@@ -350,10 +384,11 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
             if (g_pager->selected_link_index >= 0 &&
                 g_pager->selected_link_index < g_pager->link_count)
             {
-                if (*buf == 'n') tui_select_next_link();
+                if (*buf == INCHAR_LINK_NEXT ||
+                    *buf == INCHAR_LINK_NEXT_ALT) tui_select_next_link();
                 else tui_select_prev_link();
             }
-            else if (*buf == 'n')
+            else if (*buf == INCHAR_LINK_NEXT || *buf == INCHAR_LINK_NEXT_ALT)
             {
                 // Select first visible link
                 pager_select_first_link_visible();
@@ -379,18 +414,6 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
 
         tui_update_link_peek();
         return TUI_OK;
-
-    /* '/' to enter search mode */
-    case '/':
-        tui_input_prompt_begin(
-            TUI_MODE_SEARCH,
-            "search: ", 0,
-            "",
-            tui_search);
-        return TUI_OK;
-    /* 'n' for next search item */
-    case 'n': tui_search_next(); return TUI_OK;
-    case 'N': tui_search_prev(); return TUI_OK;
     }
 
     return TUI_UNHANDLED;
@@ -409,17 +432,42 @@ tui_input_links(const char *buf, const ssize_t buf_len)
     {
     // 'f' or Ret to follow selected link
     case 'f':
+    case '\n':
         tui_follow_selected_link();
         tui_input_prompt_end(TUI_MODE_LINKS);
         return TUI_OK;
 
-    // 'n' and 'p' to increment/decrement link index
-    case 'a':
-    case 'n':
+    // 'e' to edit selected URI
+    case 'e':
+    {
+        struct uri *uri;
+        if (g_pager->selected_link_index < 0 ||
+            g_pager->selected_link_index >= g_pager->link_count)
+        {
+            // No selected link
+            return TUI_OK;
+        }
+        uri = &g_pager->links[g_pager->selected_link_index].uri;
+
+        char uristr[URI_STRING_MAX];
+        uri_str(uri, uristr, sizeof(uristr), 0);
+        tui_input_prompt_begin(
+            TUI_MODE_INPUT,
+            "go: ", 0,
+            uristr,
+            tui_go_from_input);
+    } return TUI_OK;
+
+    // increment/decrement link index
+    case INCHAR_LINK_NEXT:
+    case INCHAR_LINK_NEXT_ALT:
         tui_select_next_link();
-    case 'x':
-    case 'p':
-        if (*buf == 'p' || *buf == 'x') tui_select_prev_link();
+    case INCHAR_LINK_PREV:
+    case INCHAR_LINK_PREV_ALT:
+        if (*buf == INCHAR_LINK_PREV || *buf == INCHAR_LINK_PREV_ALT)
+        {
+            tui_select_prev_link();
+        }
 
         // Write new value into the buffer
         g_in->caret =
@@ -436,15 +484,6 @@ tui_input_links(const char *buf, const ssize_t buf_len)
         tui_status_end();
 
         goto no_digit;
-
-    /* '/' to enter search mode */
-    case '/':
-        tui_input_prompt_begin(
-            TUI_MODE_SEARCH,
-            "search: ", 0,
-            "",
-            tui_search_next);
-        return TUI_OK;
     }
 
     status = tui_input_prompt_digit(buf, buf_len);

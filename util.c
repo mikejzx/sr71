@@ -185,6 +185,27 @@ utf8_size_w_formats(const char *s, size_t l)
     return max(bytes - 1, 0);
 }
 
+const char *
+next_char_w_formats(
+    const char *restrict c,
+    const char *restrict end)
+{
+    // Move over one char initially
+    ++c;
+
+    // Skip over escape codes
+    bool is_escape = false;
+    for (is_escape = *c == '\x1b'; is_escape && c < end; ++c)
+    {
+        if (*c == 'm')
+        {
+            // Last char of escape
+            return c + 1;
+        }
+    }
+    return c;
+}
+
 /* Connect a socket to a host address */
 int
 connect_socket_to(const char *hostname, int port)

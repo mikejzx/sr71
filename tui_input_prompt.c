@@ -117,7 +117,7 @@ tui_input_prompt_text(const char *buf, ssize_t buf_len)
     /* Ctrl-W: backspace one 'word' */
     case (0100 ^ 'W'): return buffer_backspace_word();
 
-    /* Ctr;-N/Ctrl-P next/previous recent URI entry */
+    /* Ctrl-N/Ctrl-P next/previous recent URI entry */
     //case (0100 ^ 'N'): return buffer_history_next(BUFFER_HISTORY_URI);
     //case (0100 ^ 'P'): return buffer_history_next(BUFFER_HISTORY_URI);
 
@@ -136,12 +136,14 @@ tui_input_prompt_text(const char *buf, ssize_t buf_len)
     case (0100 ^ 'F'): return buffer_caret_shift_word(1, true);
 
     /* Ctrl-I: bit of a crazy experimental one; this acts like a 'ciw' in Vim */
+    case (0100 ^ 'D'):
     case (0100 ^ 'I'):
         buffer_caret_shift_word(1, true);
         if (g_in->buffer[g_in->caret - 1] == '/') buffer_caret_shift(-1);
         return buffer_backspace_word();
 
     /* Ctrl-E: experimental 'delete to end' */
+    //case (0100 ^ 'C'):
     case (0100 ^ 'E'): return buffer_delete_to_end();
 
     /*
@@ -165,8 +167,6 @@ tui_input_prompt_digit(const char *buf, ssize_t buf_len)
     case '\x1b':
     case 'q':
         g_in->buffer_len = 0;
-    /* Ret: end of input */
-    case '\n':
         tui_input_prompt_end(g_in->mode);
         tui_status_clear();
         return TUI_OK;

@@ -385,6 +385,8 @@ cache_find(
     item.session.last_sel = -1;
     item.session.last_scroll = 0;
 
+    tui_status_say("Checking disk cache ...");
+
     // Iterate over metadata file's lines
     size_t tmp;
     ssize_t n_bytes;

@@ -23,6 +23,15 @@ size_t utf8_strnlen_w_formats(const char *, size_t);
 /* Number of bytes that exist in a length (inverse of above) */
 size_t utf8_size_w_formats(const char *, size_t);
 
+/* Move to beginning of next character in UTF-8 string (ignores formats) */
+//const char *utf8_next_char(const char *restrict, const char *restrict);
+
+/*
+ * Move to next character in a string that has escapes codes in it (ignores
+ * escapes)
+ */
+const char *next_char_w_formats(const char *restrict, const char *restrict);
+
 int connect_socket_to(const char *, int port);
 
 #endif
