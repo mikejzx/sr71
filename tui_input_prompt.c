@@ -223,6 +223,25 @@ end:
     return TUI_OK;
 }
 
+/*
+ * Input prompt for yes/no question inputs.
+ * Very similar to the register input function
+ */
+enum tui_status
+tui_input_prompt_yesno(const char *buf, ssize_t buf_len)
+{
+    g_in->buffer[0] = '\0';
+    g_in->buffer_len = 0;
+
+    tui_status_clear();
+    tui_input_prompt_end(g_in->mode);
+
+    // Doesn't get much simpler than this
+    if (*buf == 'y' || *buf == 'Y') if (g_in->cb_complete) g_in->cb_complete();
+
+    return TUI_OK;
+}
+
 /* Insert text into text input buffer at caret pos */
 static enum tui_status
 buffer_insert(const char *buf, const ssize_t buf_len)

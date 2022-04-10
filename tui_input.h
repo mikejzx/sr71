@@ -48,6 +48,9 @@ enum tui_input_mode
     // Prompt: in-buffer search mode
     TUI_MODE_SEARCH,
 
+    // Prompt: yes/no question (e.g. quit confirmation)
+    TUI_MODE_YES_NO,
+
     TUI_MODE_COUNT
 };
 

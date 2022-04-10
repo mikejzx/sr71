@@ -38,6 +38,8 @@ struct tui_state
     struct tui_input in;
 
     bool in_prompt;
+
+    bool did_quit;
 };
 
 extern struct tui_state *g_tui;
@@ -50,6 +52,7 @@ void tui_repaint(bool);
 void tui_invalidate(enum tui_invalidate_flags);
 int tui_go_to_uri(const struct uri *const, bool, bool);
 
+void tui_quit(void);
 void tui_go_from_input(void);
 void tui_set_mark_from_input(void);
 void tui_goto_mark_from_input(void);

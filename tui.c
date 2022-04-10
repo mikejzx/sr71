@@ -75,7 +75,9 @@ int
 tui_update(void)
 {
     ssize_t read_n = 0;
-    for (char buf[16];; read_n = read(STDOUT_FILENO, &buf, sizeof(buf)))
+    for (char buf[16];
+        !g_tui->did_quit;
+        read_n = read(STDOUT_FILENO, &buf, sizeof(buf)))
     {
         if (read_n < 0 || *buf == '\0')
         {
@@ -89,7 +91,7 @@ tui_update(void)
         if (tui_input_handle(buf, read_n) == TUI_QUIT) return -1;
     }
 
-    return 0;
+    return g_tui->did_quit ? -1 : 0;
 }
 
 void
@@ -143,6 +145,12 @@ tui_invalidate(enum tui_invalidate_flags flags)
 
     // This stops cursor flying off all over the place when in link mode
     tui_cursor_move(cursor_x_prev, cursor_y_prev);
+}
+
+void
+tui_quit(void)
+{
+    g_tui->did_quit = true;
 }
 
 /* Goto site that is currently in the input buffer */
@@ -270,14 +278,10 @@ tui_search_refresh(void)
 {
     struct search *const s = &g_pager->search;
 
+    if (s->query_len <= 0) return;
+
     s->match_count = 0;
     s->invalidated = false;
-    s->query_len = g_in->buffer_len;
-
-    if (!s->query_len) return;
-
-    strncpy(s->query, g_in->buffer, sizeof(g_pager->search.query));
-    s->query[s->query_len] = '\0';
 
     struct search_match match;
 
@@ -310,7 +314,7 @@ tui_search_refresh(void)
         }
     }
 
-    s->index = 0;
+    s->index = -1;
 
     if (s->match_count == 0)
     {
@@ -322,7 +326,14 @@ tui_search_refresh(void)
 void
 tui_search_refresh_forward(void)
 {
-    g_pager->search.reverse = false;
+    struct search *const s = &g_pager->search;
+    s->reverse = false;
+
+    s->query_len = g_in->buffer_len;
+    if (!s->query_len) return;
+    strncpy(s->query, g_in->buffer, sizeof(s->query));
+    s->query[s->query_len] = '\0';
+
     tui_search_refresh();
     tui_search_next();
 }
@@ -330,9 +341,16 @@ tui_search_refresh_forward(void)
 void
 tui_search_refresh_reverse(void)
 {
-    g_pager->search.reverse = true;
+    struct search *const s = &g_pager->search;
+    s->reverse = true;
+
+    s->query_len = g_in->buffer_len;
+    if (!s->query_len) return;
+    strncpy(s->query, g_in->buffer, sizeof(s->query));
+    s->query[s->query_len] = '\0';
+
     tui_search_refresh();
-    g_pager->search.index = max(g_pager->search.match_count - 1, 0);
+    s->index = max(s->match_count - 1, 0);
     tui_search_prev();
 }
 

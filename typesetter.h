@@ -16,7 +16,10 @@ struct typesetter
 {
     // These lines point to the raw buffer itself
     struct pager_buffer_line *raw_lines;
-    size_t raw_line_count;
+    int raw_line_count;
+
+    // Current content width
+    int content_width;
 };
 
 void typesetter_init(struct typesetter *);

@@ -31,6 +31,7 @@ static const struct tui_input_handler
     [TUI_MODE_MARK_SET]     = { tui_input_prompt_register },
     [TUI_MODE_MARK_FOLLOW]  = { tui_input_prompt_register },
     [TUI_MODE_SEARCH]       = { tui_input_prompt_text     },
+    [TUI_MODE_YES_NO]       = { tui_input_prompt_yesno    },
 };
 
 /* Special flags for movement functions */
@@ -293,7 +294,18 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     switch(c)
     {
     /* 'q' to quit */
-    case 'q': return TUI_QUIT;
+    case 'q':
+    #ifndef TUI_NO_QUIT_CONFIRMATION
+        tui_input_prompt_begin(
+            TUI_MODE_YES_NO,
+            "quit? (Y/n)", 0,
+            NULL,
+            tui_quit);
+        return TUI_OK;
+    #else
+        return TUI_QUIT;
+    #endif
+
 
     /* 'o' to enter a URI */
     case 'o':

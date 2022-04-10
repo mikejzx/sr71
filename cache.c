@@ -184,6 +184,8 @@ cache_deinit(void)
     /* Open the temporary metadata file for writing */
     if (!(fp_meta_tmp = fopen(PATH_META_TMP, "w"))) goto abort_flush;
 
+    tui_status_say("Flushing cache to disk ...");
+
     /*
      * Iterate over cache items, write them to the disk and add to the metadata
      * state

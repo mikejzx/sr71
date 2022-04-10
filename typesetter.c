@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "gemini.h"
+#include "line_break_alg.h"
 #include "mime.h"
 #include "pager.h"
 #include "state.h"
@@ -10,6 +11,16 @@ void
 typesetter_init(struct typesetter *t)
 {
     memset(t, 0, sizeof(struct typesetter));
+
+    line_break_init();
+}
+
+void
+typesetter_deinit(struct typesetter *t)
+{
+    if (t->raw_lines) free(t->raw_lines);
+
+    line_break_deinit();
 }
 
 /* Initialise typesetter with raw content data */
@@ -51,7 +62,7 @@ typesetter_reinit(struct typesetter *t)
 
         // Strip carriage returns and linefeeds
         for (const char *j = &rawbuf[i];
-            j >= t->raw_lines[l].s && (*j == '\r' || *j == '\n');
+            j >= t->raw_lines[l].s && strchr("\r\n \t", *j) != NULL;
             --j, --t->raw_lines[l].bytes);
 
         t->raw_lines[l].len = utf8_strnlen_w_formats(
@@ -61,12 +72,6 @@ typesetter_reinit(struct typesetter *t)
         l_prev = i;
         ++l;
     }
-}
-
-void
-typesetter_deinit(struct typesetter *t)
-{
-    if (t->raw_lines) free(t->raw_lines);
 }
 
 /* Prepare buffers, etc. for typesetting */
@@ -89,7 +94,7 @@ typeset_start(
     // Allocate space for buffer if needed
     if (!b->b || b->size < g_recv->size)
     {
-        b->size = (g_recv->size * 3) / 2;
+        b->size = (g_recv->size * 10) / 2;
         if (b->b) free(b->b);
         b->b = malloc(b->size);
     }
@@ -172,6 +177,10 @@ typeset_gemtext(
         // Current indent level
         int indent;
 
+        // A "canonical" indent, one that is literally pushed into the buffer
+        // (whereas above is applied during rendering).
+        int indent_canon;
+
         // This is extra indent, but doesn't apply to first line in wrapped
         // lines
         int hang;
@@ -191,12 +200,12 @@ typeset_gemtext(
         const char *esc;
         size_t esc_len;
 
-        // Escape formatting code needs to be cleared before the next line
-        bool need_clear_esc;
-
         // Prefix applied to wrapped lines
         char prefix[8];
         size_t prefix_len;
+
+        // Whether last non-empty line was a heading.
+        bool last_was_heading;
     } gemtext;
     memset(&gemtext, 0, sizeof(struct gemtext_state));
 
@@ -231,6 +240,7 @@ typeset_gemtext(
         line->is_heading = false; \
         line->is_hyphenated = false; \
         line->indent = 0; \
+        line->prefix_len = 0; \
     } while(0)
 #define LINE_FINISH() \
     do \
@@ -326,8 +336,18 @@ typeset_gemtext(
         gemtext.prefix_len = 0;
         rawline_end = rawline->s + rawline->bytes;
 
+        // Paragraphs except first under a heading get a nice little indent
+        gemtext.indent_canon = gemtext.last_was_heading ? 0 : 2;
+
         // Start a new line
         LINE_START();
+
+        // Check for empty lines
+        if (rawline->bytes == 0)
+        {
+            LINE_FINISH();
+            continue;
+        }
 
         // Check for preformatting
         if (rawline->bytes >= strlen("```") &&
@@ -364,7 +384,6 @@ typeset_gemtext(
             LINE_STRNCPY_LIT(HEADING1_ESC);
             gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 2;
-            gemtext.need_clear_esc = true;
             break;
 
         case 2:
@@ -373,7 +392,6 @@ typeset_gemtext(
             LINE_STRNCPY_LIT(HEADING2_ESC);
             gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 3;
-            gemtext.need_clear_esc = true;
             break;
 
         case 3:
@@ -382,7 +400,6 @@ typeset_gemtext(
             LINE_STRNCPY_LIT(HEADING3_ESC);
             gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 4;
-            gemtext.need_clear_esc = true;
             break;
 
         default: break;
@@ -417,6 +434,12 @@ typeset_gemtext(
 
             line->is_heading = true;
             gemtext.indent = 0;
+            gemtext.indent_canon = 0;
+            gemtext.last_was_heading = true;
+        }
+        else if (rawline->bytes >= width_total / 2)
+        {
+            gemtext.last_was_heading = false;
         }
 
         // Parse links
@@ -506,6 +529,7 @@ typeset_gemtext(
                 gemtext.hang += LINE_PRINTF_N_BYTES;
             }
             gemtext.indent = 0;
+            gemtext.indent_canon = 0;
 
             // Alternative alphabetic list index, so you don't need to reach up
             // to the number row to select links
@@ -517,8 +541,9 @@ typeset_gemtext(
         if (rawline->bytes > strlen("* ") &&
             strncmp(rawline->s, "* ", strlen("* ")) == 0)
         {
-            gemtext.indent = 1;
             gemtext.mode = PARSE_LIST;
+            gemtext.indent = 1;
+            gemtext.indent_canon = 1;
         }
 
         // Parse blockquotes
@@ -529,9 +554,9 @@ typeset_gemtext(
             const char *BLOCKQUOTE_ESC = "\x1b[2m";
             LINE_STRNCPY_LIT(BLOCKQUOTE_ESC);
             gemtext.esc_len = strlen(BLOCKQUOTE_ESC);
-            gemtext.need_clear_esc = true;
-            gemtext.indent = 2;
             gemtext.mode = PARSE_BLOCKQUOTE;
+            gemtext.indent = 2;
+            gemtext.indent_canon = 0;
 
             gemtext.raw_bytes_skip = strspn(rawline->s + 1, " ") + 1;
         }
@@ -546,6 +571,7 @@ typeset_gemtext(
 
             // Wrapped list lines get nicer indentation
             gemtext.indent = 3;
+            gemtext.indent_canon = 1;
 
             // Skip over the asterisk char
             gemtext.raw_bytes_skip = 1;
@@ -553,141 +579,71 @@ typeset_gemtext(
         else if (gemtext.mode == PARSE_BLOCKQUOTE)
         {
             // Set blockquote prefix (for both the initial and wrapped lines)
-            LINE_STRNCPY_LIT("> ");
-            strcpy(gemtext.prefix, "> ");
-            gemtext.prefix_len = strlen(gemtext.prefix);
+            static const char *const BLOCKQUOTE_PREFIX = "> ";
+            LINE_STRNCPY_LIT(BLOCKQUOTE_PREFIX);
+            strcpy(gemtext.prefix, BLOCKQUOTE_PREFIX);
+            gemtext.prefix_len = strlen(BLOCKQUOTE_PREFIX);
             gemtext.indent = 2;
+            gemtext.indent_canon = 0;
+            line->prefix_len = gemtext.prefix_len;
         }
 
     wrap: ;
         // Margins are accounted for in "width total" here
         int width = width_total - gemtext.indent;
 
-        // New line wrap method; iterate over each word in the line one-by-one,
-        // and add them to the buffer.  This fixes the annoying infinite-loop
-        // when a large word would span across lines.
-        const char *c_prev = rawline->s + gemtext.raw_bytes_skip;
+        /* Line breaking */
+        struct lb_prepare_args pa =
+        {
+            .line = rawline->s,
+            .line_end = rawline->s + rawline->bytes,
+            .length = width - gemtext.hang,
+            .offset = gemtext.raw_bytes_skip,
+            .indent = gemtext.indent_canon,
+        };
+        line_break_prepare(&pa);
+    #define TYPESET_LINEBREAK_GREEDY 0
+    #if TYPESET_LINEBREAK_GREEDY
+        line_break_compute_greedy();
+    #else
+        line_break_compute_knuth_plass();
+    #endif
+
         gemtext.raw_bytes_skip = 0;
-        int chars_this_column =
-            utf8_strnlen_w_formats(line->s, buffer_pos - line->s);
-        for (const char *c = c_prev;
-            c <= rawline_end && *c;
-            ++c)
+
+        // TODO: buffer size check
+        //BUFFER_CHECK_SIZE(width * 4 * );
+
+        // Write the broken lines into the buffer
+        ssize_t len;
+        for (; line_break_has_data();)
         {
-            // Set the most recent escape code to print at beginning of next
-            // line
-            if (*c == '\x1b')
+            if (!line_started)
             {
-                const char *esc_start = c;
+                LINE_START();
+                LINE_INDENT(true);
 
-                // Get length of escape
-                for (; c <= rawline_end; ++c)
+                // Apply the escape if we had one
+                if (gemtext.esc)
                 {
-                    if (*c == 'm')
-                    {
-                        // End of escape code
-                        gemtext.esc = esc_start;
-                        gemtext.esc_len = c - esc_start + 1;
-                        break;
-                    }
-
-                    if (!*c ||
-                        c >= rawline_end ||
-                        *c == ' ' ||
-                        *c == '\n')
-                    {
-                        break;
-                    }
-                }
-                continue;
-            }
-
-            // Found a space or we are at end of line
-            if (*c == ' ' ||
-                c == rawline_end)
-            {
-                while (chars_this_column + c - c_prev > width)
-                {
-                    // Fill in what we can of this column with the beginning of
-                    // this huge word
-                    int chars_count = max(width - chars_this_column - 1, 0);
-                    if (chars_count > 8) // 8 is an alright number
-                    {
-                        // For now only allow hyphenation on actual letters.
-                        // Apparently real hyphenation should only occur
-                        // specifically at the ends of syllables too or
-                        // something (for maximum-autist typography), but this
-                        // is good enough for now and I think it looks fine
-                        // (maybe a future feature we can implement)
-                        // We search for the earliest acceptable character to
-                        // hyphenate on, and give up and just hyphenate at the
-                        // bad char anyway if there is nothing acceptable (to
-                        // avoid infinite loops)
-                        int chars_count_old = chars_count;
-                        for (
-                            const char *prev_char = c_prev + chars_count - 1;
-                            !((*prev_char >= 'a' && *prev_char <= 'z') ||
-                                (*prev_char >= 'A' && *prev_char <= 'A'));
-                            chars_count = max(chars_count - 1, 0),
-                            prev_char = c_prev + chars_count - 1)
-                        {
-                            if (prev_char <= c_prev)
-                            {
-                                chars_count = chars_count_old;
-                                break;
-                            }
-                        }
-
-                        LINE_STRNCPY(c_prev, chars_count);
-
-                        // Hyphenate the next section of the word
-                        LINE_STRNCPY_LIT("-");
-                        line->is_hyphenated = true;
-
-                        c_prev += chars_count;
-                    }
-
-                    // Clear the escape to make clearing text a bit cleaner
-                    //LINE_STRNCPY_LIT("\x1b[0m");
-
-                    // Start next line
-                    LINE_FINISH();
-                    chars_this_column = gemtext.indent + gemtext.hang;
-                    //chars_this_column = 0;
-                    LINE_START();
-                    LINE_INDENT(true);
-
-                    // Apply the escape if we had one
-                    if (gemtext.esc)
-                    {
-                        LINE_STRNCPY(gemtext.esc, gemtext.esc_len);
-                    }
-
-                    // Apply prefix if we have one
-                    if (*gemtext.prefix)
-                    {
-                        LINE_STRNCPY(gemtext.prefix, gemtext.prefix_len);
-                    }
-
-                    // Remove trailing whitespace
-                    for (; *c_prev == ' '; ++c_prev);
+                    LINE_STRNCPY(gemtext.esc, gemtext.esc_len);
+                    line->prefix_len += gemtext.esc_len;
                 }
 
-                chars_this_column +=
-                    max(utf8_strnlen_w_formats(c_prev, c - c_prev), 0);
-
-                // Add word to the line
-                if (c - c_prev > 0) LINE_STRNCPY(c_prev, c - c_prev);
-                c_prev = c;
+                // Apply prefix if we have one
+                if (*gemtext.prefix)
+                {
+                    LINE_STRNCPY(gemtext.prefix, gemtext.prefix_len);
+                    line->prefix_len += gemtext.prefix_len;
+                }
             }
-        }
+            len = line_break_get(buffer_pos, buffer_end_pos - buffer_pos);
 
-        if (gemtext.need_clear_esc)
-        {
-            //LINE_STRNCPY_LIT("\x1b[0m");
-            gemtext.need_clear_esc = false;
-            gemtext.esc = NULL;
-            gemtext.esc_len = 0;
+            buffer_pos += len;
+            gemtext.raw_dist += len;
+            if (gemtext.link) gemtext.link->buffer_loc_len += len;
+
+            LINE_FINISH();
         }
 
         LINE_FINISH();
@@ -948,6 +904,8 @@ typeset_page(
 {
     // Bytes written by typesetter
     size_t n_bytes;
+
+    t->content_width = w;
 
     if (mime_eqs(m, MIME_GEMTEXT))
     {

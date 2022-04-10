@@ -3,7 +3,8 @@
 #include "state.h"
 #include "typesetter.h"
 
-static const int CONTENT_WIDTH_PREFERRED = 70;
+static const int   CONTENT_WIDTH_PREFERRED = 80;
+static const float CONTENT_MARGIN_BIAS     = 0.4f; // 0.3 is nice too
 
 struct pager_state *g_pager = NULL;
 
@@ -12,10 +13,10 @@ static void pager_alloc_visible_buffer(struct pager_visible_buffer *, int);
 static void
 pager_recalc_margin(void)
 {
-    int marg = g_pager->visible_buffer.w - CONTENT_WIDTH_PREFERRED;
-    g_pager->margin_bias = 0.3f;
-    g_pager->margin.l = max(0, marg * g_pager->margin_bias);
-    g_pager->margin.r = max(0, marg * (1.0f - g_pager->margin_bias));
+    int marg = g_tui->w - CONTENT_WIDTH_PREFERRED;
+    g_pager->margin_bias = CONTENT_MARGIN_BIAS;
+    g_pager->margin.l = max(0, floor(marg * g_pager->margin_bias));
+    g_pager->margin.r = max(0, ceil(marg * (1.0f - g_pager->margin_bias)));
 }
 
 void
@@ -104,7 +105,12 @@ pager_resized(void)
     // Pager takes up whole screen except bottom two rows (for status line)
     int pager_height = max(g_tui->h - 2, 1);
 
-    bool width_changed = g_pager->visible_buffer.w != g_tui->w;
+    pager_recalc_margin();
+
+    int content_width =
+        g_tui->w - g_pager->margin.l - g_pager->margin.r;
+    bool width_changed =
+        g_pager->typeset.content_width != content_width;
 
     // Allocate visible buffers (if not already allocated)
     pager_alloc_visible_buffer(&g_pager->visible_buffer, pager_height);
@@ -127,12 +133,10 @@ pager_resized(void)
         scroll_raw_dist = g_pager->buffer.lines[g_pager->scroll].raw_dist;
     }
 
-    pager_recalc_margin();
-
     // Re-typeset the content, to update word-wrapping, etc.
     typeset_page(&g_pager->typeset,
         &g_pager->buffer,
-        g_pager->visible_buffer.w - g_pager->margin.l - g_pager->margin.r,
+        content_width,
         &g_recv->mime);
 
     // Now we need to restore the scroll position by finding the line that has
@@ -269,7 +273,6 @@ pager_paint(bool full)
         struct pager_buffer_line *const line = &g_pager->visible_buffer.rows[i];
 
         // Draw the line
-        bool highlighted = false;
         bool moved = false;
         bool will_print;
         if (i < g_pager->buffer.line_count - g_pager->scroll)
@@ -311,7 +314,6 @@ pager_paint(bool full)
                     {
                         tui_say("\x1b[34m");
                     }
-                    highlighted = true;
                     break;
                 }
             }
@@ -335,11 +337,8 @@ pager_paint(bool full)
 
             tui_sayn(line->s, line->bytes);
 
-            //if (highlighted)
-            {
-                // Always clear the escapes after the line
-                tui_say("\x1b[0m");
-            }
+            // Always clear the escapes after the line
+            tui_say("\x1b[0m");
 
             // Don't clear if not full
             if (!full) continue;
@@ -371,15 +370,13 @@ pager_paint(bool full)
         int clear_count =
             (int)g_pager->visible_buffer_prev.rows[i].len - (int)line->len +
             max(g_pager->visible_buffer_prev.rows[i].indent - line->indent, 0);
-        clear_count = max(clear_count, 0);
+        clear_count = max(clear_count, 1);
         //clear_count = min(max(clear_count, 0),
         //    g_pager->visible_buffer.w - (int)line->len);
         tui_printf("%*s", clear_count, "");
     }
 
     // Highlight search matches
-    // This needs some improvement; still causes glitched-out rendering at the
-    // moment...
     const struct search_match *match;
     for (int i = 0; i < g_pager->search.match_count; ++i)
     {
@@ -553,31 +550,39 @@ pager_search_next(void)
         return;
     }
 
-    // Wrap search
-    int search_pos = (s->index == s->match_count - 1) ? 0 : g_pager->scroll;
-
+    // Start search from scroll position
+    const int search_pos = g_pager->scroll;
+    bool got = false;
     for (int i = 0; i < s->match_count; ++i)
     {
         if (s->matches[i].begin.line >= search_pos)
         {
-            if (s->index == i)
+            if (s->index != -1 && i <= s->index)
             {
                 // Check if there's any other matches on this line we could use
                 // instead
                 for (int j = i + 1; j < s->match_count; ++j)
                 {
-                    if (s->matches[i].begin.line == search_pos)
+                    if (s->matches[j].begin.line == search_pos)
                     {
                         i = j;
                         break;
                     }
                 }
+                if (s->index == i) continue;
             }
 
             s->index = i;
             g_pager->scroll = s->matches[i].begin.line;
+            got = true;
             break;
         }
+    }
+    if (!got)
+    {
+        // Wrap search
+        s->index = 0;
+        g_pager->scroll = s->matches[s->index].begin.line;
     }
 
     tui_invalidate(INVALIDATE_PAGER_BIT);
@@ -604,32 +609,40 @@ pager_search_prev(void)
         return;
     }
 
-    // Wrap the search
-    int search_pos = (s->index == 0) ?
-        (g_pager->buffer.line_count - 1) : g_pager->scroll;
+    // Start search from scroll position
+    const int search_pos = g_pager->scroll;
 
+    bool got = false;
     for (int i = s->match_count - 1; i > -1; --i)
     {
         if (s->matches[i].begin.line <= search_pos)
         {
-            if (s->index == i)
+            if (s->index != -1 && i >= s->index)
             {
                 // Check if there's any other matches on this line we could use
                 // instead
                 for (int j = i - 1; j > -1; --j)
                 {
-                    if (s->matches[i].begin.line == search_pos)
+                    if (s->matches[j].begin.line == search_pos)
                     {
                         i = j;
                         break;
                     }
                 }
+                if (s->index == i) continue;
             }
 
             s->index = i;
             g_pager->scroll = s->matches[i].begin.line;
+            got = true;
             break;
         }
+    }
+    if (!got)
+    {
+        // Wrap
+        s->index = s->match_count - 1;
+        g_pager->scroll = s->matches[s->index].begin.line;
     }
 
     tui_invalidate(INVALIDATE_PAGER_BIT);
@@ -703,8 +716,8 @@ pager_multiline_search(
      */
 
     // Current line we are on and searching
-    const char *line = b->lines[line_index].s,
-               *line_end = line + b->lines[line_index].bytes;
+    const char *line = b->lines[line_index].s + b->lines[line_index].prefix_len,
+               *line_end = b->lines[line_index].s + b->lines[line_index].bytes;
 
     // Match until we reach end of query
     const char *c;
@@ -753,8 +766,8 @@ pager_multiline_search(
     next_line:
         ++line_index;
         if (line_index >= b->line_count) break;
-        line     = b->lines[line_index].s;
-        line_end = line + b->lines[line_index].bytes;
+        line     = b->lines[line_index].s + b->lines[line_index].prefix_len;
+        line_end = b->lines[line_index].s + b->lines[line_index].bytes;
         for (c = line;
             c < line_end && *c && *c == ' ';
             c = next_char_w_formats(c, line_end));

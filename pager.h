@@ -40,6 +40,9 @@ struct pager_buffer_line
 
     // Line indent level
     int indent;
+
+    // Length of prefix that is applied to this line
+    size_t prefix_len;
 };
 
 struct pager_buffer
@@ -49,7 +52,7 @@ struct pager_buffer
 
     // Points where line-breaks occur in the buffer
     struct pager_buffer_line *lines;
-    size_t line_count, lines_capacity;
+    int line_count, lines_capacity;
 };
 
 struct pager_link
@@ -59,7 +62,7 @@ struct pager_link
     // Location/length of link in buffer
     char *buffer_loc;
     size_t buffer_loc_len;
-    size_t line_index;
+    int line_index;
 };
 
 struct pager_state
@@ -77,7 +80,7 @@ struct pager_state
     // Previous is kept to help with redrawing
     struct pager_visible_buffer
     {
-        size_t w, h;
+        int w, h;
         struct pager_buffer_line *rows;
         size_t rows_size;
     } visible_buffer, visible_buffer_prev;
@@ -87,8 +90,8 @@ struct pager_state
 
     // List of links on the page
     struct pager_link *links;
-    size_t link_count;
-    size_t link_capacity;
+    int link_count;
+    int link_capacity;
     int selected_link_index, selected_link_index_prev;
 
     // Pager margins
