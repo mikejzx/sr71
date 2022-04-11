@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "config.h"
 #include "state.h"
 #include "cache.h"
 #include "tui.h"

@@ -181,8 +181,8 @@ utf8_size_w_formats(const char *s, size_t l)
 
         count += (*s & 0xC0) != 0x80;
     }
-    //return bytes;
-    return max(bytes - 1, 0);
+    return bytes;
+    //return max(bytes - 1, 0);
 }
 
 const char *

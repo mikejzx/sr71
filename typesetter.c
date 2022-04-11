@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "config.h"
 #include "gemini.h"
 #include "line_break_alg.h"
 #include "mime.h"
@@ -52,6 +53,7 @@ typesetter_reinit(struct typesetter *t)
     }
 
     // Set line points in raw buffer
+#if 0
     int l = 0, l_prev = -1;
     for (int i = 0; i < g_recv->size; ++i)
     {
@@ -72,6 +74,26 @@ typesetter_reinit(struct typesetter *t)
         l_prev = i;
         ++l;
     }
+#else
+    const char *c, *end = rawbuf + g_recv->size, *start = rawbuf;
+    struct pager_buffer_line *line = t->raw_lines;
+    for (c = start; c < end; ++c)
+    {
+        if (*c != '\n' && c != end - 1) continue;
+
+        line->s = start;
+        line->bytes = c - start;
+
+        for (const char *j = c - 1;
+            j >= start && (*j == '\r' || *j == '\n') && line->bytes > 0;
+            --j, --line->bytes);
+
+        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
+
+        start = c + 1;
+        ++line;
+    }
+#endif
 }
 
 /* Prepare buffers, etc. for typesetting */
@@ -328,16 +350,26 @@ typeset_gemtext(
         gemtext.link = NULL;
         gemtext.raw_dist = 0;
         gemtext.hang = 0;
-        gemtext.indent = 1;
-        line->indent = 1;
+        gemtext.indent = GEMTEXT_INDENT_PARAGRAPH;
+        line->indent = GEMTEXT_INDENT_PARAGRAPH;
         gemtext.esc = NULL;
         gemtext.esc_len = 0;
         *gemtext.prefix = 0;
         gemtext.prefix_len = 0;
         rawline_end = rawline->s + rawline->bytes;
 
-        // Paragraphs except first under a heading get a nice little indent
-        gemtext.indent_canon = gemtext.last_was_heading ? 0 : 2;
+    #if GEMTEXT_FANCY_PARAGRAPH_INDENT
+        gemtext.indent_canon =
+        #if GEMTEXT_FANCY_PARAGRAPH_INDENT_ALWAYS
+            // Constant paragraph indent
+            GEMTEXT_FANCY_PARAGRAPH_INDENT;
+        #else
+            // Paragraphs except first under a heading get a nice little indent
+            gemtext.last_was_heading ? 0 : GEMTEXT_FANCY_PARAGRAPH_INDENT;
+        #endif
+    #else
+        gemtext.indent_canon = 0;
+    #endif
 
         // Start a new line
         LINE_START();
@@ -362,7 +394,7 @@ typeset_gemtext(
         if (gemtext.mode == PARSE_VERBATIM)
         {
             // Print text verbatim
-            gemtext.indent = 2;
+            gemtext.indent = GEMTEXT_INDENT_VERBATIM;
             LINE_INDENT(false);
             LINE_STRNCPY(rawline->s, rawline->bytes);
             LINE_FINISH();
@@ -380,24 +412,21 @@ typeset_gemtext(
         {
         case 1:
             gemtext.esc = buffer_pos;
-            const char *HEADING1_ESC = "\x1b[1;36m";
-            LINE_STRNCPY_LIT(HEADING1_ESC);
+            LINE_STRNCPY_LIT(COLOUR_HEADING1);
             gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 2;
             break;
 
         case 2:
             gemtext.esc = buffer_pos;
-            const char *HEADING2_ESC = "\x1b[36m";
-            LINE_STRNCPY_LIT(HEADING2_ESC);
+            LINE_STRNCPY_LIT(COLOUR_HEADING2);
             gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 3;
             break;
 
         case 3:
             gemtext.esc = buffer_pos;
-            const char *HEADING3_ESC = "\x1b[1m";
-            LINE_STRNCPY_LIT(HEADING3_ESC);
+            LINE_STRNCPY_LIT(COLOUR_HEADING3);
             gemtext.esc_len = buffer_pos - gemtext.esc;
             gemtext.raw_bytes_skip = 4;
             break;
@@ -433,7 +462,7 @@ typeset_gemtext(
             }
 
             line->is_heading = true;
-            gemtext.indent = 0;
+            gemtext.indent = GEMTEXT_INDENT_HEADING;
             gemtext.indent_canon = 0;
             gemtext.last_was_heading = true;
         }
@@ -542,7 +571,7 @@ typeset_gemtext(
             strncmp(rawline->s, "* ", strlen("* ")) == 0)
         {
             gemtext.mode = PARSE_LIST;
-            gemtext.indent = 1;
+            gemtext.indent = GEMTEXT_INDENT_LIST;
             gemtext.indent_canon = 1;
         }
 
@@ -555,7 +584,7 @@ typeset_gemtext(
             LINE_STRNCPY_LIT(BLOCKQUOTE_ESC);
             gemtext.esc_len = strlen(BLOCKQUOTE_ESC);
             gemtext.mode = PARSE_BLOCKQUOTE;
-            gemtext.indent = 2;
+            gemtext.indent = GEMTEXT_INDENT_BLOCKQUOTE;
             gemtext.indent_canon = 0;
 
             gemtext.raw_bytes_skip = strspn(rawline->s + 1, " ") + 1;
@@ -567,10 +596,10 @@ typeset_gemtext(
         if (gemtext.mode == PARSE_LIST)
         {
             // Apply our own bullet char to lists
-            LINE_STRNCPY_LIT("\u2022");
+            LINE_STRNCPY_LIT(LIST_BULLET_CHAR);
 
             // Wrapped list lines get nicer indentation
-            gemtext.indent = 3;
+            gemtext.indent = GEMTEXT_INDENT_LIST + 2;
             gemtext.indent_canon = 1;
 
             // Skip over the asterisk char
@@ -579,11 +608,10 @@ typeset_gemtext(
         else if (gemtext.mode == PARSE_BLOCKQUOTE)
         {
             // Set blockquote prefix (for both the initial and wrapped lines)
-            static const char *const BLOCKQUOTE_PREFIX = "> ";
             LINE_STRNCPY_LIT(BLOCKQUOTE_PREFIX);
             strcpy(gemtext.prefix, BLOCKQUOTE_PREFIX);
             gemtext.prefix_len = strlen(BLOCKQUOTE_PREFIX);
-            gemtext.indent = 2;
+            gemtext.indent = GEMTEXT_INDENT_BLOCKQUOTE;
             gemtext.indent_canon = 0;
             line->prefix_len = gemtext.prefix_len;
         }
@@ -602,7 +630,6 @@ typeset_gemtext(
             .indent = gemtext.indent_canon,
         };
         line_break_prepare(&pa);
-    #define TYPESET_LINEBREAK_GREEDY 0
     #if TYPESET_LINEBREAK_GREEDY
         line_break_compute_greedy();
     #else
@@ -684,6 +711,10 @@ typeset_plaintext(
         line->bytes = 0;
         line->raw_index = raw_index;
         line->raw_dist = 0;
+        line->is_heading = false;
+        line->is_hyphenated = false;
+        line->indent = 0;
+        line->prefix_len = 0;
 
         const size_t n_bytes = rawline->bytes;
         BUFFER_CHECK_SIZE(n_bytes);
@@ -694,7 +725,7 @@ typeset_plaintext(
         buffer_pos += n_bytes;
 
         // Finish line
-        line->len = utf8_strnlen_w_formats(line->s, line->bytes + 1);
+        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
             b->lines_capacity)
         {
@@ -777,6 +808,10 @@ typeset_gophermap(
         line->bytes = 0;
         line->raw_index = raw_index;
         line->raw_dist = 0;
+        line->is_heading = false;
+        line->is_hyphenated = false;
+        line->indent = 0;
+        line->prefix_len = 0;
         rawline_end = rawline->s + rawline->bytes;
 
         // Write display string to the buffer

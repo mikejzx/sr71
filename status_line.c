@@ -1,8 +1,9 @@
 #include "pch.h"
+#include "config.h"
+#include "pager.h"
 #include "state.h"
 #include "status_line.h"
 #include "tui.h"
-#include "pager.h"
 
 struct status_line g_statline;
 
@@ -38,7 +39,13 @@ status_line_paint(void)
         {
             // Just display page URI for now
             c->bytes = uri_str(&g_state->uri,
-                text, sizeof(text), URI_FLAGS_FANCY_BIT);
+                text, sizeof(text),
+            #if STATUS_LINE_FANCY_URI_FORMAT
+                URI_FLAGS_FANCY_BIT
+            #else
+                0
+            #endif
+                );
             c->len = utf8_strnlen_w_formats(text, c->bytes);
 
             // Don't render whole text if it exceeds terminal width
@@ -81,8 +88,7 @@ status_line_paint(void)
 
         // Draw the new text
         tui_cursor_move(x_pos, g_tui->h - 1);
-        //tui_say("\x1b[30;42m");
-        tui_say("\x1b[2m");
+        tui_say(COLOUR_STATUS_LINE);
         tui_sayn(text, c->bytes);
         tui_say("\x1b[0m");
 

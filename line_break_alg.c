@@ -1,44 +1,23 @@
 #include "pch.h"
+#include "config.h"
 #include "line_break_alg.h"
 #include "hyphenate_alg.h"
 
-#define LINEBREAK_INITIAL_ITEM_COUNT 16384
-#define LINEBREAK_INITIAL_BREAKPOINT_COUNT 16384
+#define LINEBREAK_INITIAL_ITEM_COUNT 4096
+#define LINEBREAK_INITIAL_BREAKPOINT_COUNT 64
 
-// Whether to justify text to the margins
-#define TYPESET_JUSTIFY 1
-
-// Force double-space sentences in non-justified text (disabled in justified to
-// hopefully avoid too many spaces; however end-of-sentences are prioritised
-// higher by justification algorithm)
-// TODO: force double spaces in last (non-justified) line of paragraph
-#if TYPESET_JUSTIFY
-#  define TYPESET_FORCE_DOUBLE_SPACE_SENTENCE 0
-#else
-#  define TYPESET_FORCE_DOUBLE_SPACE_SENTENCE 1
-#endif
-
-#define LB_INFINITY 99999
+#define LB_INFINITY (SHRT_MAX + 1)
 
 // Represents a single "item" in a string of text.  All algorithms are based
 // around the fundamental 'box-glue-penalty' model as used in Knuth-Plass
+// We try to pack this to 16 bytes to slightly reduce some memory usage
 struct lb_item
 {
-    enum lb_item_type
-    {
-        LB_BOX,
-        LB_GLUE,
-        LB_PENALTY,
-    } t;
-
-    // All items types store a width
-    uint8_t w;
-
     union
     {
         // Fixed-width item that can be typeset within the paragraph.
         // Usually we use boxes to store word fragments
-        struct lb_box
+        struct __attribute__((__packed__)) lb_box
         {
             // Content of the box; the number of chars will be the width of the
             // box
@@ -48,23 +27,37 @@ struct lb_item
             // UTF-8 text may have more bytes here, while having a shorter 'w'
             // width
             uint8_t w_canon;
+
+            // Aligns the whole outer structure to 16 bytes (and this specific
+            // structure to 14 bytes)
+            uint8_t _padding[5];
         } b;
 
         // Glue is used to "stick the boxes together" and are what essentially
         // define the space.  We have no reason to use stretch/shrink
         // properties as defined in Knuth-Plass, as our implementation does not
-        // need to support proportional fonts
-        //struct lb_glue { } g;
+        // need to support proportional fonts.
 
         // Penalties can be used to define breakpoints within the paragraph;
         // (e.g. hyphenation points) though have a number associated with them
         // to indicate the desirability of that break
         struct lb_penalty
         {
-            int penalty;
-            bool flag;
+            int16_t penalty;
+            int8_t flag;
         } p;
     };
+
+    // Type of item
+    enum __attribute__((__packed__)) lb_item_type
+    {
+        LB_BOX = 0,
+        LB_GLUE,
+        LB_PENALTY,
+    } t;
+
+    // All items types store a width
+    uint8_t w;
 };
 
 // Knuth-Plass linked list node
@@ -102,7 +95,7 @@ struct kp_ll
 struct lb_breakpoint
 {
     // Position that break occurred
-    int pos;
+    uint16_t pos;
 };
 
 // Current item list
@@ -127,16 +120,53 @@ static int s_linelen;
 static bool word_is_end_of_sentence(const char *, size_t);
 static void justify_text(struct lb_item *restrict, struct lb_item *restrict);
 
+static inline void
+ensure_item_buffer(size_t len)
+{
+    if (len < s_icap) return;
+
+    s_icap = (len * 3) / 2;
+    void *tmp = realloc(s_items, s_icap * sizeof(struct lb_item));
+    if (!tmp)
+    {
+        fprintf(stderr, "out of memory\n");
+        free(s_items);
+        exit(-1);
+    }
+    s_items = tmp;
+}
+
+static inline void
+ensure_item_buffer_incr(void) { ensure_item_buffer(s_icount + 3); }
+
+static inline void
+ensure_breakpoint_buffer(size_t len)
+{
+    if (len < s_bpcap) return;
+
+    s_bpcap = (len * 3) / 2;
+    void *tmp = realloc(s_bp, s_bpcap * sizeof(struct lb_breakpoint));
+    if (!tmp)
+    {
+        fprintf(stderr, "out of memory\n");
+        free(s_bp);
+        exit(-1);
+    }
+    s_bp = tmp;
+}
+
+static inline void
+ensure_breakpoint_buffer_incr(void) { ensure_breakpoint_buffer(s_bpcount + 3); }
+
 void
 line_break_init(void)
 {
-    // TODO dynamically resize capacity and breakpoints
-
     s_icount = 0;
     s_icap = LINEBREAK_INITIAL_ITEM_COUNT;
     s_items = malloc(s_icap * sizeof(struct lb_item));
 
     s_bpcap = LINEBREAK_INITIAL_BREAKPOINT_COUNT;
+    s_bpcount = 0;
     s_bp = malloc(s_bpcap * sizeof(struct lb_breakpoint));
 
     memset(&s_kp_active, 0, sizeof(struct kp_ll));
@@ -158,8 +188,8 @@ line_break_prepare(const struct lb_prepare_args *args)
 
     s_linelen = args->length;
 
-    // Resize buffer if needed
-    // line_break_ensure_buffer((args->line->bytes * 3) / 2);
+    // Resize buffer to an approximate initial size
+    ensure_item_buffer(args->line_end - args->line);
 
     const char
         *c_last = args->line + args->offset,
@@ -169,6 +199,7 @@ line_break_prepare(const struct lb_prepare_args *args)
     for (c_last = c; *c_last == ' ' || *c_last == '\t'; ++c_last);
 
     // Add indent box
+    ensure_item_buffer_incr();
     s_items[s_icount++] = (struct lb_item)
     {
         .t = LB_BOX,
@@ -195,6 +226,7 @@ line_break_prepare(const struct lb_prepare_args *args)
         int h_last = 0;
         for (int h = hyphenate_get(); h != -1; h = hyphenate_get())
         {
+            ensure_item_buffer_incr();
             s_items[s_icount++] = (struct lb_item)
             {
                 .t = LB_BOX,
@@ -205,15 +237,17 @@ line_break_prepare(const struct lb_prepare_args *args)
                     .w_canon = h - h_last,
                 }
             };
+            ensure_item_buffer_incr();
             s_items[s_icount++] = (struct lb_item)
             {
                 .t = LB_PENALTY,
                 .w = 1,
-                .p = { .penalty = 20, .flag = true }
+                .p = { .penalty = TYPESET_LB_PENALTY_HYPHENATION, .flag = true }
             };
             h_last = h;
         }
 
+        ensure_item_buffer_incr();
         s_items[s_icount++] = (struct lb_item)
         {
             .t = LB_BOX,
@@ -229,16 +263,21 @@ line_break_prepare(const struct lb_prepare_args *args)
         // width zero
         if (hyphen_count)
         {
-            s_items[s_icount++] = (struct lb_item)
+            for (int h = 0; h < hyphen_count; ++h)
             {
-                .t = LB_BOX,
-                .w = 1,
-                .b =
+                ensure_item_buffer_incr();
+                s_items[s_icount++] = (struct lb_item)
                 {
-                    .content = "-",
-                    .w_canon = 1,
-                },
-            };
+                    .t = LB_BOX,
+                    .w = 1,
+                    .b =
+                    {
+                        .content = "-",
+                        .w_canon = 1,
+                    },
+                };
+            }
+            ensure_item_buffer_incr();
             s_items[s_icount++] = (struct lb_item)
             {
                 .t = LB_PENALTY,
@@ -271,6 +310,7 @@ line_break_prepare(const struct lb_prepare_args *args)
             bool end_of_sentence = word_is_end_of_sentence(
                 last_box->b.content, last_box->b.w_canon);
 
+            ensure_item_buffer_incr();
             s_items[s_icount++] = (struct lb_item)
             {
                 .t = LB_GLUE,
@@ -284,12 +324,13 @@ line_break_prepare(const struct lb_prepare_args *args)
             // begin at start of line instead of end
             if (end_of_sentence)
             {
+                ensure_item_buffer_incr();
                 s_items[s_icount++] = (struct lb_item)
                 {
                     .t = LB_PENALTY,
                     .p =
                     {
-                        .penalty = -15
+                        .penalty = TYPESET_LB_PENALTY_END_OF_SENTENCE_BONUS
                     }
                 };
             }
@@ -303,11 +344,13 @@ line_break_prepare(const struct lb_prepare_args *args)
 
     // Paragraph ends with 'finishing glue' and a penalty item for the required
     // end-of-paragrah break
+    ensure_item_buffer_incr();
     s_items[s_icount++] = (struct lb_item)
     {
         .t = LB_GLUE,
         .w = 0,
     };
+    ensure_item_buffer_incr();
     s_items[s_icount++] = (struct lb_item)
     {
         .t = LB_PENALTY,
@@ -426,6 +469,7 @@ line_break_compute_greedy(void)
             item->p.penalty == -LB_INFINITY)
         {
             s_bp[s_bpcount].pos = (last_box ? (last_box - s_items) : i) + 1;
+            ensure_breakpoint_buffer_incr();
             ++s_bpcount;
             w = 0;
             last_box = NULL;
@@ -438,6 +482,7 @@ line_break_compute_greedy(void)
         {
             s_bp[s_bpcount].pos = (last_box ? (last_box - s_items) : i) + 1;
 
+            ensure_breakpoint_buffer_incr();
             ++s_bpcount;
             w = 0;
             last_box = NULL;
@@ -525,6 +570,7 @@ line_break_compute_knuth_plass(void)
 
     for (; best; best = best->prev)
     {
+        ensure_breakpoint_buffer_incr();
         s_bp[s_bpcount++].pos = best->pos;
     }
 
@@ -795,12 +841,114 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
         }
     }
 #else
+    if (total_space_count <= 0) return;
+
     /*
      * Algorithm C: uses a fairly basic scoring system to find the theoretically
      *              more desirable places to put spaces.
      */
+    // First iteration, we look for any sentence ends to firstly distribute the
+    // space to, as these have the highest priority (so they have at least 2
+    // spaces)
+    for (struct lb_item *item = first; space_remain > 0 && item < last; ++item)
+    {
+        if (item->t != LB_BOX ||
+            !item->b.content ||
+            !item->b.w_canon ||
+            !word_is_end_of_sentence(item->b.content, item->b.w_canon))
+        {
+            continue;
+        }
+
+        // Get following glue and increase space
+        struct lb_item *glue = item + 1;
+        if (glue >= last || glue->t != LB_GLUE) continue;
+        ++glue->w;
+        --space_remain;
+    }
+
+    // Distribute remaining spaces across the line
+
+    // broken method; it fails to consider the fact taht our boxes are not
+    // bloody single-words but rather are fragments
+#if 0
+    int best_rank, rank;
+    struct lb_item *best_box, *space;
+    while (space_remain > 0)
+    {
+        best_rank = LB_INFINITY;
+        best_box = NULL;
+
+        // Iterate over boxes and prioritise distributing spaces around
+        // smallest ones
+        int item_count = last - first;
+        for (struct lb_item *item = first; item <= last; ++item)
+        {
+            if (item->t != LB_BOX) continue;
+
+            // Size of box directly contributes to space around it
+            rank = item->w * item->w;
+
+            //int item_index = item - first;
+            //float item_index_norm = (float)item_index / item_count;
+
+            // Factor in size of spaces already around box
+#if 0
+            space = NULL;
+            for (space = item - 1;
+                space > first && space->t != LB_GLUE;
+                --space);
+            if (space->t == LB_GLUE)
+            {
+                rank += (space->w * space->w * space->w);
+            }
+            for (space = item + 1;
+                space < last && space->t != LB_GLUE;
+                ++space);
+            if (space->t == LB_GLUE)
+            {
+                rank += (space->w * space->w * space->w);
+            }
+#endif
+
+            // If there was no spaces around the box for whatever reason; make
+            // this box less desirable as there's nowhere to put spaces around
+            // it
+            //if (!space) rank += 999;
+
+            if (rank < best_rank)
+            {
+                best_rank = rank;
+                best_box = item;
+            }
+        }
+
+        // Place spaces around the best box
+        for (space = best_box - 1;
+            space > first && space->t != LB_GLUE;
+            --space);
+        if (space->t == LB_GLUE)
+        {
+            ++space->w;
+            --space_remain;
+            if (space_remain <= 0) break;
+        }
+        for (space = best_box + 1;
+            space < last && space->t != LB_GLUE;
+            ++space);
+        if (space->t == LB_GLUE)
+        {
+            ++space->w;
+            --space_remain;
+            if (space_remain <= 0) break;
+        }
+    }
+#endif
+
+#if 0
     int best_rank, rank;
     struct lb_item *best_space, *box;
+
     while (space_remain > 0)
     {
         // Iterate over the line, and find best space to use
@@ -828,15 +976,10 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
                 {
                     len_left = box->w * box->w;
 
-                    // Prefer if at end of sentence or if punctuation
-                    bool eos = word_is_end_of_sentence(
-                        box->b.content,
-                        box->b.w_canon);
-                    rank -= eos * 50;
-                    if (!eos && ispunct(box->b.content[box->b.w_canon - 1]))
-                    {
-                        rank -= 2;
-                    }
+                    //if (ispunct(box->b.content[box->b.w_canon - 1]))
+                    //{
+                    //    rank -= 2;
+                    //}
                 }
             }
             if (item < last)
@@ -847,19 +990,20 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
                     len_right = box->w * box->w;
 
                     // Prefer if at end of sentence or if punctuation
-                    bool eos = word_is_end_of_sentence(
-                        box->b.content,
-                        box->b.w_canon);
-                    rank -= eos * 50;
-                    if (!eos && ispunct(box->b.content[0]))
-                    {
-                        rank -= 2;
-                    }
+                    //bool eos = word_is_end_of_sentence(
+                    //    box->b.content,
+                    //    box->b.w_canon);
+                    //rank -= eos * 50;
+                    //if (!eos && ispunct(box->b.content[0]))
+                    //{
+                    //    rank -= 2;
+                    //}
                 }
             }
 
             //rank += sqrt(len_left * len_left + len_right * len_right);
-            rank += len_left + len_right;
+            //rank += len_left + len_right;
+            rank += min(len_left, len_right) * 2;
 
             // Check if rank is better than what we've already got
             if (rank < best_rank)
@@ -876,6 +1020,8 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
             --space_remain;
         }
     }
+#endif
+
 #endif
 
 #endif // TYPESET_JUSTIFY

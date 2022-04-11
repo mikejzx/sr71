@@ -1,8 +1,13 @@
 #ifndef CACHE_H
 #define CACHE_H
 
+#include "config.h"
 #include "uri.h"
 #include "mime.h"
+
+#define CACHE_PATH PROGRAM_DATA_DIR "/cache"
+#define CACHE_PATH_GEMINI CACHE_PATH "/gemini"
+#define CACHE_PATH_GOPHER CACHE_PATH "/gopher"
 
 /*
  * cache.h
@@ -32,9 +37,6 @@
  * + Perhaps "versions" of cached items can be kept?
  * + May possibly look into compression of local cache? (lz4 or gzip should do)
  */
-
-// Indicate that we want to build with persistent disk caching enabled
-#define CACHE_USE_DISK 1
 
 #define CACHE_ITEM_CAPACITY_INITIAL (128)
 

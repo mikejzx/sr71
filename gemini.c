@@ -136,22 +136,48 @@ gemini_request(struct uri *uri)
     // Get response header
     // <status><space><meta><cr-lf>
     static char response_header[2 + 1 + 1024 + 2 + 1];
-    int read_code, ssl_error;
-    if ((read_code = SSL_read(gem->ssl, response_header,
-            sizeof(response_header))) <= 0 &&
-        (ssl_error = SSL_get_error(gem->ssl, read_code)) != SSL_ERROR_NONE)
+    int response_code, ssl_error;
+    int response_header_len = 0, response_header_len_mime = 0;
+    int response_bytes_read = 0;
+    while (sizeof(response_header) - response_bytes_read > 0 &&
+        (response_code = SSL_read(gem->ssl,
+            response_header + response_bytes_read,
+        sizeof(response_header) - response_bytes_read)) > 0)
+    {
+        // We need to read at least until we get the CR-LF of the header
+        for (char *x = response_header + response_bytes_read;
+            x < response_header + sizeof(response_header);
+            ++x)
+        {
+            if (*x == '\r' &&
+                ++x < response_header + sizeof(response_header) &&
+                *x == '\n')
+            {
+                // Move to the CR
+                --x;
+
+                // Set it as the end of the string
+                *x = '\0';
+
+                // Adjust the header length
+                response_header_len = x - response_header;
+                response_header_len_mime = strcspn(response_header, ";\0");
+                response_bytes_read += response_code;
+                goto got_crlf;
+            }
+        }
+        response_bytes_read += response_code;
+    }
+got_crlf:
+    if (response_code <= 0 &&
+        (ssl_error = SSL_get_error(gem->ssl, response_code)) != SSL_ERROR_NONE)
     {
         tui_status_begin();
-        tui_printf("Error while reading response header data (error %d)",
+        tui_printf("Error while reading response header data (SSL error: %d)",
             ssl_error);
         tui_status_end();
         goto fail;
     }
-
-    int response_header_len = strcspn(response_header, "\r");
-    int response_header_len_mime = strcspn(response_header, "\r;");
-    response_header[response_header_len_mime] = '\0';
-    response_header[response_header_len] = '\0';
 
     tui_status_begin();
     tui_printf("Server responded: %s", response_header);
@@ -198,18 +224,17 @@ gemini_request(struct uri *uri)
             // Read whatever was left from the header chunk after the header
             // (or else we end up with missing content...)
             response_header_len += 2; // mind the CR-LF
-            if (read_code > response_header_len)
+            if (response_bytes_read > response_header_len)
             {
                 recv_buffer_check_size(
-                    recv_bytes + read_code - response_header_len);
+                    recv_bytes + response_bytes_read - response_header_len);
                 memcpy(g_recv->b + recv_bytes,
                     response_header + response_header_len,
-                    read_code - response_header_len);
-                recv_bytes += read_code - response_header_len;
+                    response_bytes_read - response_header_len);
+                recv_bytes += response_bytes_read - response_header_len;
             }
 
             // Read response body in chunks
-            int response_code;
             while ((response_code =
                 SSL_read(gem->ssl, chunk, sizeof(chunk))) > 0)
             {

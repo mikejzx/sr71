@@ -1,19 +1,13 @@
 #ifndef PCH_H
 #define PCH_H
 
-// (working title)
-#define PROGRAM_NAME "vigem"
-//#define PROGRAM_DATA_DIR "~/.local/share/" PROGRAM_NAME "/"
-#define PROGRAM_DATA_DIR "."
-#define TOFU_FILE_PATH PROGRAM_DATA_DIR "/trusted_hosts"
-#define CACHE_PATH PROGRAM_DATA_DIR "/cache"
-#define CACHE_PATH_GEMINI CACHE_PATH "/gemini"
-#define CACHE_PATH_GOPHER CACHE_PATH "/gopher"
+#define PROGRAM_NAME "frosty"
 
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <locale.h>
 #include <math.h>
 #include <poll.h>

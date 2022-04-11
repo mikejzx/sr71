@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "config.h"
 #include "pager.h"
 #include "state.h"
 #include "tui.h"
@@ -263,18 +264,18 @@ tui_input_common(const char *buf, const ssize_t buf_len)
             TUI_MODE_SEARCH,
             "/", 0,
             NULL,
-            tui_search_refresh_forward);
+            tui_search_start_forward);
         return TUI_OK;
     case '?':
         tui_input_prompt_begin(
             TUI_MODE_SEARCH,
             "?", 0,
             NULL,
-            tui_search_refresh_reverse);
+            tui_search_start_reverse);
         return TUI_OK;
     /* 'n'/'N' for next/prev search item */
-    case 'n': tui_search_next(); return TUI_OK;
-    case 'N': tui_search_prev(); return TUI_OK;
+    case 'n': search_next(); return TUI_OK;
+    case 'N': search_prev(); return TUI_OK;
 
     default: break;
     }
@@ -295,7 +296,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     {
     /* 'q' to quit */
     case 'q':
-    #ifndef TUI_NO_QUIT_CONFIRMATION
+    #if TUI_QUIT_CONFIRMATION
         tui_input_prompt_begin(
             TUI_MODE_YES_NO,
             "quit? (Y/n)", 0,

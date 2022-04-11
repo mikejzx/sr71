@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "config.h"
 #include "tofu.h"
 #include "tui.h"
 

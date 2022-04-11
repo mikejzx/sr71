@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "config.h"
 #include "hyphenate_alg.h"
 
 static int s_hyphens[1024];

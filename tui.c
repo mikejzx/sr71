@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "config.h"
 #include "cache.h"
 #include "local.h"
 #include "pager.h"
@@ -273,58 +274,9 @@ end:
     tui_invalidate(INVALIDATE_PAGER_SELECTED_BIT);
 }
 
+/* Begin search in forward direction using input buffer text */
 void
-tui_search_refresh(void)
-{
-    struct search *const s = &g_pager->search;
-
-    if (s->query_len <= 0) return;
-
-    s->match_count = 0;
-    s->invalidated = false;
-
-    struct search_match match;
-
-    // Search for all matches in the buffer itself
-    for (int i = 0; i < g_pager->buffer.line_count; ++i)
-    {
-        struct pager_buffer_line *line = &g_pager->buffer.lines[i];
-
-        // Simple linear search for the string
-        for (const char *c = line->s;
-            c < line->s + line->bytes;
-            ++c)
-        {
-            //if (line->bytes - (c - line->s) < s->query_len ||
-            //    strncmp(c, s->query, s->query_len) != 0) continue;
-
-            // Check for match using our special search function
-            if (pager_multiline_search(
-                c, s->query, &g_pager->buffer, i, &match) != 0) continue;
-
-            s->matches[s->match_count++] = (struct search_match)
-            {
-                .begin =
-                {
-                    .line = i,
-                    .loc = c,
-                },
-                .end = match.end
-            };
-        }
-    }
-
-    s->index = -1;
-
-    if (s->match_count == 0)
-    {
-        tui_status_say("Pattern not found");
-        return;
-    }
-}
-
-void
-tui_search_refresh_forward(void)
+tui_search_start_forward(void)
 {
     struct search *const s = &g_pager->search;
     s->reverse = false;
@@ -334,12 +286,13 @@ tui_search_refresh_forward(void)
     strncpy(s->query, g_in->buffer, sizeof(s->query));
     s->query[s->query_len] = '\0';
 
-    tui_search_refresh();
-    tui_search_next();
+    search_perform();
+    search_next();
 }
 
+/* Begin search in reverse direction using input buffer text */
 void
-tui_search_refresh_reverse(void)
+tui_search_start_reverse(void)
 {
     struct search *const s = &g_pager->search;
     s->reverse = true;
@@ -349,23 +302,9 @@ tui_search_refresh_reverse(void)
     strncpy(s->query, g_in->buffer, sizeof(s->query));
     s->query[s->query_len] = '\0';
 
-    tui_search_refresh();
+    search_perform();
     s->index = max(s->match_count - 1, 0);
-    tui_search_prev();
-}
-
-void
-tui_search_next(void)
-{
-    if (g_pager->search.reverse) pager_search_prev();
-    else pager_search_next();
-}
-
-void
-tui_search_prev(void)
-{
-    if (g_pager->search.reverse) pager_search_next();
-    else pager_search_prev();
+    search_prev();
 }
 
 void

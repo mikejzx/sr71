@@ -1,6 +1,8 @@
 #ifndef TOFU_H
 #define TOFU_H
 
+#define TOFU_FILE_PATH PROGRAM_DATA_DIR "/trusted_hosts"
+
 #include "uri.h"
 
 /*
