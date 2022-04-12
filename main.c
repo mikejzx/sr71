@@ -91,10 +91,15 @@ main(int argc, char **argv)
 
     // Set some temporary content
     static const char *PAGER_CONTENT =
-        "# gemini client\n"
+        "# sr71\n"
         "\n"
         "## Built with:\n"
         "* SSL: " OPENSSL_VERSION_TEXT "\n"
+#if TYPESET_LINEBREAK_GREEDY
+        "* Line breaking algorithm: Greedy\n"
+#else
+        "* Line breaking algorithm: Knuth-Plass\n"
+#endif
         "\n"
         "### Some links\n"
         "=> gemini://gemini.circumlunar.space/ Gemini Homepage\n"

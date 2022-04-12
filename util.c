@@ -300,3 +300,48 @@ connect_socket_to(const char *hostname, int port)
     freeaddrinfo(res);
     return sock;
 }
+
+int
+timestamp_age_human_readable(time_t ts, char *buf, size_t buf_len)
+{
+    time_t now = time(NULL);
+    time_t diff = difftime(now, ts);
+
+    if (diff < 60 * 2)
+    {
+        // In last minute or so
+        static const char *STR_NOW = "now";
+        strncpy(buf, STR_NOW, buf_len);
+        return strlen(STR_NOW);
+    }
+    if (diff < 60 * 60)
+    {
+        // Within last hour; print in minutes
+        return snprintf(buf, buf_len,
+            "%d minutes ago",
+            (int)diff / 60);
+    }
+    else if (diff < 60 * 60 * 24)
+    {
+        // Within last 24 hours; print in hours
+        return snprintf(buf, buf_len,
+            "%d hours ago",
+            (int)diff / (60 * 60));
+    }
+    else if (diff < 60 * 60 * 24 * 2)
+    {
+        // Within last day; print yesterday
+        static const char *STR_YESTERDAY = "yesterday";
+        strncpy(buf, STR_YESTERDAY, buf_len);
+        return strlen(STR_YESTERDAY);
+    }
+    else
+    {
+        // Print anything else in days
+        return snprintf(buf, buf_len,
+            "%d days ago",
+            (int)diff / (60 * 60 * 24));
+    }
+
+    return 0;
+}

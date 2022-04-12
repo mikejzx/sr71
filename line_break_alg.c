@@ -1,5 +1,4 @@
 #include "pch.h"
-#include "config.h"
 #include "line_break_alg.h"
 #include "hyphenate_alg.h"
 
@@ -116,7 +115,7 @@ static int s_kp_width_sum;
 static void knuth_plass(const struct lb_item *, int);
 
 // Misc
-static int s_linelen;
+static int s_linelen_initial, s_linelen_follow;
 static bool word_is_end_of_sentence(const char *, size_t);
 static void justify_text(struct lb_item *restrict, struct lb_item *restrict);
 
@@ -186,7 +185,8 @@ line_break_prepare(const struct lb_prepare_args *args)
     // Reset item count
     s_icount = 0;
 
-    s_linelen = args->length;
+    s_linelen_initial = args->length - args->skip;
+    s_linelen_follow = args->length - args->hang;
 
     // Resize buffer to an approximate initial size
     ensure_item_buffer(args->line_end - args->line);
@@ -458,6 +458,7 @@ line_break_compute_greedy(void)
     s_bpcount = 0;
     s_bp_reversed = false;
 
+    int linelen = s_linelen_initial;
     int w = 0;
     const struct lb_item *last_box = NULL;
     for (int i = 0; i < s_icount; ++i)
@@ -473,12 +474,13 @@ line_break_compute_greedy(void)
             ++s_bpcount;
             w = 0;
             last_box = NULL;
+            linelen = s_linelen_follow;
             continue;
         }
 
         if (item->t != LB_BOX) continue;
 
-        if (w + item->w >= s_linelen)
+        if (w + item->w >= linelen)
         {
             s_bp[s_bpcount].pos = (last_box ? (last_box - s_items) : i) + 1;
 
@@ -486,6 +488,7 @@ line_break_compute_greedy(void)
             ++s_bpcount;
             w = 0;
             last_box = NULL;
+            linelen = s_linelen_follow;
         }
 
         // Add width of box
@@ -595,7 +598,8 @@ knuth_plass(const struct lb_item *item, int item_index)
         line,
         w,
         width_sum,
-        badness;
+        badness,
+        linelen;
 
     for (int best_score; active; )
     {
@@ -611,14 +615,16 @@ knuth_plass(const struct lb_item *item, int item_index)
 
             if (item->t == LB_PENALTY) w += item->w;
 
+            linelen = line == 1 ? s_linelen_initial : s_linelen_follow;
+
             // Line is too long
-            if (w > s_linelen) goto next;
+            if (w > linelen) goto next;
 
             // Last line doesn't contribute to score
             if (item_index == s_icount - 1) goto score_skip;
 
             // Calculate score
-            badness = s_linelen - w;
+            badness = linelen - w;
             badness *= badness;
             if (item->t == LB_PENALTY && item->p.penalty > 0)
             {
@@ -641,7 +647,8 @@ knuth_plass(const struct lb_item *item, int item_index)
             if (item->t == LB_PENALTY &&
                 s_items[active->pos].t == LB_PENALTY)
             {
-                score += 100 * item->p.flag * s_items[active->pos].p.flag;
+                score += TYPESET_LB_PENALTY_CONSECUTIVE_HYPHENS *
+                    item->p.flag * s_items[active->pos].p.flag;
             }
 
             // Add total score
@@ -748,11 +755,16 @@ word_is_end_of_sentence(const char *s, size_t len)
     // two characters then we assume it is.
     if (len == 2) return false;
 
-    // Finally test for abbreviations like e.g. and i.e., by checking if more
-    // full-stops are present in the word
-    for (const char *s2 = s + len - 2; s2 >= s; --s2)
+    // If the second-last character is punctuation, e.g. "etc.).", then we need
+    // to skip the test below or else we get false negatives like the above.
+    if (!ispunct(s[len - 2]) && s[len - 2] != '.')
     {
-        if (*s2 == '.') return false;
+        // Test for abbreviations like e.g. and i.e., by checking if more
+        // full-stops are present in the word
+        for (const char *s2 = s + len - 2; s2 >= s; --s2)
+        {
+            if (*s2 == '.') return false;
+        }
     }
 
     return true;
@@ -765,88 +777,33 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
     return;
 #else
 
-    int space_remain;
-    if ((!s_bp_reversed && s_bp_cur == 0) ||
-        (s_bp_reversed && s_bp_cur == s_bpcount - 1))
-    {
-        // Don't justify last line
-        space_remain = 0;
-    }
-    else
-    {
-        space_remain = s_linelen;
-        for (struct lb_item *item = first; item <= last; ++item)
-        {
-            if (item->t != LB_PENALTY) space_remain -= item->w;
-        }
+    // Last line is a special case; we don't want to actually justify it, but
+    // we want to ensure that double-spaces after sentences are applied (if
+    // TYPESET_FORCE_DOUBLE_SPACE_SENTENCE is set).
+    bool
+    //is_last_line = (!s_bp_reversed && s_bp_cur == s_bpcount - 1) ||
+    //    (s_bp_reversed && s_bp_cur == s_bpcount - 1),
+    is_last_line = s_bp_cur == s_bpcount - 1,
+    is_first_line = (!s_bp_reversed && s_bp_cur == s_bpcount - 1) ||
+        (s_bp_reversed && s_bp_cur == 0);
 
-        // Hanging punctuation
-        if (ispunct(last->b.content[last->b.w_canon - 1]))
-        {
-            ++space_remain;
-        }
-    }
-
+    // Count remaining and total spaces
+    int space_remain = is_first_line ? s_linelen_initial : s_linelen_follow;
     int total_space_count = 0;
-    for (struct lb_item *item = first; item < last; ++item)
+    for (struct lb_item *item = first; item <= last; ++item)
     {
+        if (item->t != LB_PENALTY) space_remain -= item->w;
         if (item->t == LB_GLUE) ++total_space_count;
     }
+
+    // Hanging punctuation
+    if (last->b.content &&
+        last->b.w_canon > 0 &&
+        ispunct(last->b.content[last->b.w_canon - 1])) ++space_remain;
 
     // No spaces to justify
     if (total_space_count <= 0) return;
 
-#if 0
-    /*
-     * Algorithm B: attempts to evenly distribute the remaining space across
-     *              whatever spaces are in the line.  Doesn't look great, but
-     *              yeah...
-     */
-    if (total_space_count > 0 && space_remain > 0)
-    {
-        // Number of spaces we can distribute to all spaces in the line
-        int spaces_even_total = space_remain - space_remain % total_space_count;
-
-        float remainder_incr =
-            ((float)total_space_count + spaces_even_total) / space_remain;
-
-        if (remainder_incr > 0.0f)
-        {
-            int index_prev = -1, index;
-
-            for (float incr = 0.0f;
-                incr < (float)total_space_count && space_remain > 0;
-                incr += remainder_incr)
-            {
-                index = (int)ceil(incr);
-                if (index != index_prev)
-                {
-                    int i = 0;
-                    for (struct lb_item *item = first; item < last; ++item)
-                    {
-                        if (item->t != LB_GLUE) continue;
-
-                        if (i == index)
-                        {
-                            ++item->w;
-                            --space_remain;
-                            break;
-                        }
-                        ++i;
-                    }
-
-                    index_prev = index;
-                }
-            }
-        }
-    }
-#else
-    if (total_space_count <= 0) return;
-
-    /*
-     * Algorithm C: uses a fairly basic scoring system to find the theoretically
-     *              more desirable places to put spaces.
-     */
     // First iteration, we look for any sentence ends to firstly distribute the
     // space to, as these have the highest priority (so they have at least 2
     // spaces)
@@ -867,162 +824,50 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
         --space_remain;
     }
 
-    // Distribute remaining spaces across the line
+    // No more spaces left
+    if (space_remain <= 0) return;
 
-    // broken method; it fails to consider the fact taht our boxes are not
-    // bloody single-words but rather are fragments
-#if 0
-    int best_rank, rank;
-    struct lb_item *best_box, *space;
+    // Sentences now have double-spaces in last line.  Since we don't want to
+    // justify the last line we return now
+    if (is_last_line) return;
+
+    /* Now distribute remaining spaces across the line */
+
+    /*
+     * New "right-left-right..." alternation method.  This seems to be a
+     * pattern that nroff follows and it produces fantastic results in
+     * comparison to the other attempted methods; despite this one being
+     * literally one of the simplest methods.
+     */
+    bool alternate = (s_bp_cur + 1 + !s_bp_reversed) % 2;
     while (space_remain > 0)
     {
-        best_rank = LB_INFINITY;
-        best_box = NULL;
-
-        // Iterate over boxes and prioritise distributing spaces around
-        // smallest ones
-        int item_count = last - first;
-        for (struct lb_item *item = first; item <= last; ++item)
+        if (alternate)
         {
-            if (item->t != LB_BOX) continue;
-
-            // Size of box directly contributes to space around it
-            rank = item->w * item->w;
-
-            //int item_index = item - first;
-            //float item_index_norm = (float)item_index / item_count;
-
-            // Factor in size of spaces already around box
-#if 0
-            space = NULL;
-            for (space = item - 1;
-                space > first && space->t != LB_GLUE;
-                --space);
-            if (space->t == LB_GLUE)
+            // Begin from start
+            for (struct lb_item *item = first;
+                space_remain > 0 && item < last;
+                ++item)
             {
-                rank += (space->w * space->w * space->w);
-            }
-            for (space = item + 1;
-                space < last && space->t != LB_GLUE;
-                ++space);
-            if (space->t == LB_GLUE)
-            {
-                rank += (space->w * space->w * space->w);
-            }
-#endif
+                if (item->t != LB_GLUE) continue;
 
-            // If there was no spaces around the box for whatever reason; make
-            // this box less desirable as there's nowhere to put spaces around
-            // it
-            //if (!space) rank += 999;
-
-            if (rank < best_rank)
-            {
-                best_rank = rank;
-                best_box = item;
+                ++item->w;
+                --space_remain;
             }
         }
+        else
+        {
+            // Begin from end
+            for (struct lb_item *item = last;
+                space_remain > 0 && item > first;
+                --item)
+            {
+                if (item->t != LB_GLUE) continue;
 
-        // Place spaces around the best box
-        for (space = best_box - 1;
-            space > first && space->t != LB_GLUE;
-            --space);
-        if (space->t == LB_GLUE)
-        {
-            ++space->w;
-            --space_remain;
-            if (space_remain <= 0) break;
-        }
-        for (space = best_box + 1;
-            space < last && space->t != LB_GLUE;
-            ++space);
-        if (space->t == LB_GLUE)
-        {
-            ++space->w;
-            --space_remain;
-            if (space_remain <= 0) break;
+                ++item->w;
+                --space_remain;
+            }
         }
     }
 #endif
-
-#if 0
-    int best_rank, rank;
-    struct lb_item *best_space, *box;
-
-    while (space_remain > 0)
-    {
-        // Iterate over the line, and find best space to use
-        best_rank = LB_INFINITY;
-        best_space = NULL;
-        for (struct lb_item *item = first; item < last; ++item)
-        {
-            if (item->t != LB_GLUE) continue;
-
-            /* Determine rank of space */
-
-            // Raise the current space to an exponent to avoid using same space
-            // too many times
-            rank = item->w * item->w;
-            rank *= rank;
-            rank *= rank;
-
-            int len_left = 0, len_right = 0;
-
-            // Consider boxes around the space
-            if (item > first)
-            {
-                for (box = item - 1; box >= first && box->t != LB_BOX; --box);
-                if (box->t == LB_BOX)
-                {
-                    len_left = box->w * box->w;
-
-                    //if (ispunct(box->b.content[box->b.w_canon - 1]))
-                    //{
-                    //    rank -= 2;
-                    //}
-                }
-            }
-            if (item < last)
-            {
-                for (box = item + 1; box <= last && box->t != LB_BOX; ++box);
-                if (box->t == LB_BOX)
-                {
-                    len_right = box->w * box->w;
-
-                    // Prefer if at end of sentence or if punctuation
-                    //bool eos = word_is_end_of_sentence(
-                    //    box->b.content,
-                    //    box->b.w_canon);
-                    //rank -= eos * 50;
-                    //if (!eos && ispunct(box->b.content[0]))
-                    //{
-                    //    rank -= 2;
-                    //}
-                }
-            }
-
-            //rank += sqrt(len_left * len_left + len_right * len_right);
-            //rank += len_left + len_right;
-            rank += min(len_left, len_right) * 2;
-
-            // Check if rank is better than what we've already got
-            if (rank < best_rank)
-            {
-                best_rank = rank;
-                best_space = item;
-            }
-        }
-
-        // Apply space
-        if (best_space)
-        {
-            ++best_space->w;
-            --space_remain;
-        }
-    }
-#endif
-
-#endif
-
-#endif // TYPESET_JUSTIFY
 }

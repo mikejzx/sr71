@@ -1,9 +1,13 @@
 #include "pch.h"
-#include "config.h"
 #include "pager.h"
 #include "search.h"
 #include "state.h"
+#include "status_line.h"
 #include "typesetter.h"
+
+#define PAGER_TOP (STATUS_LINE_TOP_HEIGHT)
+#define PAGER_HEIGHT \
+    max(g_tui->h - STATUS_LINE_TOP_HEIGHT - STATUS_LINE_BOTTOM_HEIGHT, 1)
 
 struct pager_state *g_pager = NULL;
 
@@ -94,9 +98,6 @@ pager_deinit(void)
 void
 pager_resized(void)
 {
-    // Pager takes up whole screen except bottom two rows (for status line)
-    int pager_height = max(g_tui->h - 2, 1);
-
     pager_recalc_margin();
 
     int content_width =
@@ -105,8 +106,8 @@ pager_resized(void)
         g_pager->typeset.content_width != content_width;
 
     // Allocate visible buffers (if not already allocated)
-    pager_alloc_visible_buffer(&g_pager->visible_buffer, pager_height);
-    pager_alloc_visible_buffer(&g_pager->visible_buffer_prev, pager_height);
+    pager_alloc_visible_buffer(&g_pager->visible_buffer, PAGER_HEIGHT);
+    pager_alloc_visible_buffer(&g_pager->visible_buffer_prev, PAGER_HEIGHT);
 
     // Don't need to do anything else unless width had changed (as width
     // affects word-wrapping, etc.)
@@ -291,7 +292,7 @@ pager_paint(bool full)
                     // Move cursor to correct place and fill margin and indent
                     if (!moved)
                     {
-                        tui_cursor_move(0, i + 1);
+                        tui_cursor_move(0, i + 1 + PAGER_TOP);
                         tui_printf("%*s", g_pager->margin.l + line->indent, "");
                         moved = true;
                     }
@@ -315,7 +316,7 @@ pager_paint(bool full)
             // Move cursor to correct place and fill margin
             if (!moved)
             {
-                tui_cursor_move(0, i + 1);
+                tui_cursor_move(0, i + 1 + PAGER_TOP);
                 tui_printf("%*s", g_pager->margin.l + line->indent, "");
                 moved = true;
             }
@@ -339,7 +340,7 @@ pager_paint(bool full)
             if (!full) continue;
 
             // Move cursor to correct place and fill margin
-            tui_cursor_move(0, i + 1);
+            tui_cursor_move(0, i + 1 + PAGER_TOP);
             tui_printf("%*s", g_pager->margin.l, "");
 
         #if CLEAR_VI_STYLE
@@ -355,7 +356,8 @@ pager_paint(bool full)
 
         // Clear old line
         tui_cursor_move(
-            (int)line->len + g_pager->margin.l + 1 + line->indent, i + 1);
+            (int)line->len + g_pager->margin.l + 1 + line->indent,
+            i + 1 + PAGER_TOP);
         int clear_count =
             (int)g_pager->visible_buffer_prev.rows[i].len - (int)line->len +
             max(g_pager->visible_buffer_prev.rows[i].indent - line->indent, 0);

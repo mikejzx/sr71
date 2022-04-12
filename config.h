@@ -4,8 +4,8 @@
 /*
  * config.h
  *
- * Configuration options for 'frosty'.  At the moment everything is configured
- * at compile-time (suckless style)
+ * Configuration options for the program.  At the moment everything is
+ * configured at compile-time (suckless style)
  */
 
 /*
@@ -13,7 +13,7 @@
  */
 
 // Preferred width of the page content (applies to Gemtext)
-static const int CONTENT_WIDTH_PREFERRED = 70;
+static const int CONTENT_WIDTH_PREFERRED = 65;
 
 // Bias of content in the page.
 //   0.0: fully left
@@ -35,7 +35,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 // hostname in a brighter colour, and will highlight gopher item type.
 #define STATUS_LINE_FANCY_URI_FORMAT 1
 
-#define LIST_BULLET_CHAR "\u2022"
+#define LIST_BULLET_CHAR "\u2022 "
 #define BLOCKQUOTE_PREFIX "> "
 
 /* Offsets from left margin */
@@ -43,7 +43,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 #define GEMTEXT_INDENT_HEADING 0
 #define GEMTEXT_INDENT_VERBATIM 2
 #define GEMTEXT_INDENT_BLOCKQUOTE 2
-#define GEMTEXT_INDENT_LIST 2
+#define GEMTEXT_INDENT_LIST 3
 
 /* Fancy indent looks like this:
  *   This is a paragraph which has been indented.  By default we only indent
@@ -80,7 +80,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 #define TYPESET_LINEBREAK_GREEDY 0
 
 /* Whether to justify text to the margins */
-#define TYPESET_JUSTIFY 0
+#define TYPESET_JUSTIFY 1
 
 /* Set to 1 to disable hyphenation algorithm */
 #define TYPESET_NO_HYPHENATION 0
@@ -98,9 +98,10 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 #endif
 
 /* Penalties/bonuses for line-breaking algorithm */
-#define TYPESET_LB_PENALTY_HYPHENATION 20
+#define TYPESET_LB_PENALTY_HYPHENATION 10
 #define TYPESET_LB_PENALTY_HYPHENATION_EXPLICIT 0
 #define TYPESET_LB_PENALTY_END_OF_SENTENCE_BONUS -15
+#define TYPESET_LB_PENALTY_CONSECUTIVE_HYPHENS 150
 
 /*
  * Misc.

@@ -1,4 +1,4 @@
-OUT=frosty
+OUT=sr71
 
 SRCS=$(shell ls *.c)
 OBJS=$(patsubst %.c,%.o,$(SRCS))

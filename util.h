@@ -34,4 +34,10 @@ const char *next_char_w_formats(const char *restrict, const char *restrict);
 
 int connect_socket_to(const char *, int port);
 
+/*
+ * Convert time since timestamp to a human-readable string.
+ * Excuse the abyssmal function name
+ */
+int timestamp_age_human_readable(time_t, char *, size_t);
+
 #endif

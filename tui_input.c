@@ -1,5 +1,4 @@
 #include "pch.h"
-#include "config.h"
 #include "pager.h"
 #include "state.h"
 #include "tui.h"
@@ -367,9 +366,9 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
         // Skip if no links in the page
         if (!g_pager->link_count) return TUI_OK;
 
-        bool is_digit = *buf !=
-            INCHAR_LINK_NEXT && *buf != INCHAR_LINK_PREV &&
-            INCHAR_LINK_NEXT_ALT && *buf != INCHAR_LINK_PREV_ALT;
+        bool is_digit =
+            *buf != INCHAR_LINK_NEXT     && *buf != INCHAR_LINK_PREV &&
+            *buf != INCHAR_LINK_NEXT_ALT && *buf != INCHAR_LINK_PREV_ALT;
 
         char b[2];
         if (is_digit)
@@ -385,7 +384,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
             is_digit ? b : NULL,
             NULL);
 
-        // Put the correct index in the bufer
+        // Put the correct index in the buffer
         if (is_digit)
         {
             g_pager->selected_link_index = atoi(buf);

@@ -1,7 +1,6 @@
 #ifndef CACHE_H
 #define CACHE_H
 
-#include "config.h"
 #include "uri.h"
 #include "mime.h"
 

@@ -1,5 +1,4 @@
 #include "pch.h"
-#include "config.h"
 #include "pager.h"
 #include "state.h"
 #include "status_line.h"

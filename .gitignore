@@ -1,5 +1,6 @@
 gem
 frosty
+sr71
 valgrind-out*
 *.d
 *.o

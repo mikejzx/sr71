@@ -1,5 +1,4 @@
 #include "pch.h"
-#include "config.h"
 #include "cache.h"
 #include "local.h"
 #include "pager.h"
@@ -432,8 +431,32 @@ tui_go_to_uri(
             tui_input_prompt_end(g_in->mode);
 
             tui_status_begin();
-            tui_printf("Loaded content from %s, ", uri.hostname);
+            tui_printf("Loaded content from %s, ",
+                from_cache ? "cache" : uri.hostname);
             tui_print_size(g_recv->size);
+
+            if (cache_item)
+            {
+                // Write cached item age in right-side of status
+                char tmp[g_tui->w + 1];
+                size_t tmp_len = timestamp_age_human_readable(
+                    cache_item->timestamp, tmp, sizeof(tmp));
+
+            #define CACHE_AGE_PREFIX "fetched: "
+
+                // Fill middle
+                tui_printf("%*s",
+                    (int)(g_tui->w -
+                        tmp_len -
+                        strlen(CACHE_AGE_PREFIX) -
+                        g_tui->cursor_x - 1),
+                    "");
+
+                // Write the status
+                tui_printf("\x1b[32m" CACHE_AGE_PREFIX "%s\x1b[0m", tmp);
+            #undef CACHE_AGE_PREFIX
+            }
+
             tui_status_end();
 
             do_cache = !from_cache;

@@ -1,7 +1,8 @@
 #ifndef PCH_H
 #define PCH_H
 
-#define PROGRAM_NAME "frosty"
+#define PROGRAM_NAME "sr71"
+#include "config.h"
 
 #include <ctype.h>
 #include <dirent.h>

@@ -18,6 +18,9 @@ struct lb_prepare_args
     // Bytes to skip at start of line
     unsigned offset;
 
+    // Length to skip at start of line
+    unsigned skip;
+
     // Number of initial indentation characters (written to buffer)
     unsigned indent;
 
