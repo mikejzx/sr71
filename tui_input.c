@@ -205,6 +205,11 @@ tui_input_common(const char *buf, const ssize_t buf_len)
         tui_refresh_page();
         return TUI_OK;
 
+    // 'R' to issue a full redraw
+    case 'R':
+        tui_repaint(true);
+        return TUI_OK;
+
     // 'S' to save page to an explicit path (despite it being in cache if disk
     // cache is enabled)
     case 'S':

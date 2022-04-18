@@ -13,7 +13,7 @@
  */
 
 // Preferred width of the page content (applies to Gemtext)
-static const int CONTENT_WIDTH_PREFERRED = 65;
+static const int CONTENT_WIDTH_PREFERRED = 72;
 
 // Bias of content in the page.
 //   0.0: fully left

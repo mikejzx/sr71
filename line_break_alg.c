@@ -32,6 +32,11 @@ struct lb_item
             uint8_t _padding[5];
         } b;
 
+        struct lb_glue
+        {
+            bool no_stretch;
+        } g;
+
         // Glue is used to "stick the boxes together" and are what essentially
         // define the space.  We have no reason to use stretch/shrink
         // properties as defined in Knuth-Plass, as our implementation does not
@@ -193,7 +198,8 @@ line_break_prepare(const struct lb_prepare_args *args)
 
     const char
         *c_last = args->line + args->offset,
-        *c = c_last;
+        *c = c_last,
+        *c_word;
 
     // Move over leading whitespace
     for (c_last = c; *c_last == ' ' || *c_last == '\t'; ++c_last);
@@ -220,9 +226,15 @@ line_break_prepare(const struct lb_prepare_args *args)
         int hyphen_count = 0;
         for (; c[hyphen_count] == '-'; ++hyphen_count);
 
+        // End of word (minus punctuation)
+        for (c_word = c - 1;
+            c_word >= c_last && (isspace(*c_word) || ispunct(*c_word));
+            --c_word);
+        ++c_word;
+
         // Find the hyphenation points in the word, and add them as penalty
         // items between the boxes
-        hyphenate(c_last, c - c_last);
+        hyphenate(c_last, c_word - c_last);
         int h_last = 0;
         for (int h = hyphenate_get(); h != -1; h = hyphenate_get())
         {
@@ -246,18 +258,35 @@ line_break_prepare(const struct lb_prepare_args *args)
             };
             h_last = h;
         }
-
+        // Final box for word
         ensure_item_buffer_incr();
         s_items[s_icount++] = (struct lb_item)
         {
             .t = LB_BOX,
-            .w = utf8_width(c_last + h_last, (c - c_last) - h_last),
+            .w = utf8_width(c_last + h_last, (c_word - c_last) - h_last),
             .b =
             {
                 .content = c_last + h_last,
-                .w_canon = (c - c_last) - h_last,
+                .w_canon = (c_word - c_last) - h_last,
             }
         };
+
+        // Add punctuation in it's own box
+        if (c_word < c)
+        {
+            ensure_item_buffer_incr();
+            s_items[s_icount++] = (struct lb_item)
+            {
+                .t = LB_BOX,
+                //.w = c - c_word,
+                .w = 0,
+                .b =
+                {
+                    .content = c_word,
+                    .w_canon = c - c_word,
+                }
+            };
+        }
 
         // Explicit hyphens/dashes get followed by a flagged penalty item with
         // width zero
@@ -269,12 +298,25 @@ line_break_prepare(const struct lb_prepare_args *args)
                 s_items[s_icount++] = (struct lb_item)
                 {
                     .t = LB_BOX,
-                    .w = 1,
+                    // Width is zero because we move it into a following glue
+                    // so it can hang in margins
+                    .w = 0,
                     .b =
                     {
                         .content = "-",
                         .w_canon = 1,
                     },
+                };
+
+                // And an extra glue so that the hyphen can hang properly
+                ensure_item_buffer_incr();
+                s_items[s_icount++] = (struct lb_item)
+                {
+                    .t = LB_GLUE,
+                    .w = 1,
+                    // We don't want this glue to be stretched at all, or else
+                    // there may be gaps after hyphens in-sentence, like- this
+                    .g.no_stretch = true,
                 };
             }
             ensure_item_buffer_incr();
@@ -314,10 +356,13 @@ line_break_prepare(const struct lb_prepare_args *args)
             s_items[s_icount++] = (struct lb_item)
             {
                 .t = LB_GLUE,
+                .w =
             #if TYPESET_FORCE_DOUBLE_SPACE_SENTENCE
-                .w = end_of_sentence ? 2 :
+                    end_of_sentence ? 2 :
             #endif
-                1,
+                    1 +
+                    // Add additional space into glue for hanging punctuation
+                    (c - c_word),
             };
 
             // Add penalty "bonus" after sentences to encourage sentences to
@@ -393,9 +438,56 @@ line_break_get(char *buf, size_t buf_len)
     // Justify the content
     justify_text(first, last_box);
 
-    // Now draw the items out
+    /*
+     * And finally, draw the items out in reverse; we do this so that items
+     * towards left are drawn "on top", e.g. if their width is smaller than
+     * their canonical width.  This is done so that hanging punctuation, which
+     * has zero-width, is drawn properly without following glue overwriting it
+     */
+
+    char *buf_abs_end = buf + buf_len;
+    char *buf_end;
     char *buf_ptr = buf;
-    for (const struct lb_item *item = first; item <= last; ++item)
+    const struct lb_item *item;
+
+    // First iterate to find the total width to start the buffer point at and
+    // move backwards from
+    for (item = first; item <= last; ++item)
+    {
+        switch(item->t)
+        {
+        case LB_BOX:
+            if (item->b.content == NULL)
+            {
+                buf_ptr += item->w;
+                break;
+            }
+            if (item->w) buf_ptr += item->b.w_canon;
+
+            break;
+        case LB_GLUE:
+            if (item == first || item == last) continue;
+            buf_ptr += item->w;
+            break;
+        case LB_PENALTY:
+            if (item != last || !item->w) continue;
+            buf_ptr += 1;
+            break;
+        default: break;
+        }
+    }
+
+    // Give up if we exceed the end of the given buffer
+    if (buf_ptr >= buf_abs_end)
+    {
+        ++s_bp_cur;
+        return 0;
+    }
+
+    buf_end = buf_ptr;
+
+    // Draw the items
+    for (item = last; item >= first; --item)
     {
         switch(item->t)
         {
@@ -403,40 +495,43 @@ line_break_get(char *buf, size_t buf_len)
             if (item->b.content == NULL)
             {
                 // Write spaces for empty boxes (e.g. indent)
-                buf_ptr += snprintf(
-                    buf_ptr,
-                    buf_len - (buf_ptr - buf),
-                    "%*s", item->w, "");
+                for (int x = 0; x < item->w; ++x)
+                {
+                    --buf_ptr;
+                    *buf_ptr = ' ';
+                }
                 break;
             }
-            buf_ptr += snprintf(
-                buf_ptr,
-                buf_len - (buf_ptr - buf),
-                "%.*s", item->b.w_canon, item->b.content);
+            if (item->w) buf_ptr -= item->b.w_canon;
+
+            // Relocate buffer end point if we write past it (e.g. hanging
+            // punctuation)
+            if (buf_ptr + item->b.w_canon > buf_end)
+            {
+                buf_end = buf_ptr + item->b.w_canon;
+            }
+
+            strncpy(buf_ptr, item->b.content, item->b.w_canon);
             break;
         case LB_GLUE:
             if (item == first || item == last) continue;
-
-            buf_ptr += snprintf(
-                buf_ptr,
-                buf_len - (buf_ptr - buf),
-                "%*s",
-                item->w,
-                "");
+            for (int x = 0; x < item->w; ++x)
+            {
+                --buf_ptr;
+                *buf_ptr = ' ';
+            }
             break;
         case LB_PENALTY:
             if (item != last || !item->w) continue;
-            buf_ptr += snprintf(
-                buf_ptr,
-                buf_len - (buf_ptr - buf),
-                "-");
+            --buf_ptr;
+            *buf_ptr = '-';
             break;
         default: break;
         }
     }
 
     ++s_bp_cur;
-    return buf_ptr - buf;
+    return buf_end - buf_ptr;
 }
 
 /* Return true if there's more lines to read */
@@ -793,13 +888,8 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
     for (struct lb_item *item = first; item <= last; ++item)
     {
         if (item->t != LB_PENALTY) space_remain -= item->w;
-        if (item->t == LB_GLUE) ++total_space_count;
+        if (item->t == LB_GLUE && !item->g.no_stretch) ++total_space_count;
     }
-
-    // Hanging punctuation
-    if (last->b.content &&
-        last->b.w_canon > 0 &&
-        ispunct(last->b.content[last->b.w_canon - 1])) ++space_remain;
 
     // No spaces to justify
     if (total_space_count <= 0) return;
@@ -819,7 +909,9 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
 
         // Get following glue and increase space
         struct lb_item *glue = item + 1;
-        if (glue >= last || glue->t != LB_GLUE) continue;
+        if (glue >= last ||
+            glue->t != LB_GLUE ||
+            glue->g.no_stretch) continue;
         ++glue->w;
         --space_remain;
     }
@@ -849,7 +941,7 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
                 space_remain > 0 && item < last;
                 ++item)
             {
-                if (item->t != LB_GLUE) continue;
+                if (item->t != LB_GLUE || item->g.no_stretch) continue;
 
                 ++item->w;
                 --space_remain;
@@ -862,7 +954,7 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
                 space_remain > 0 && item > first;
                 --item)
             {
-                if (item->t != LB_GLUE) continue;
+                if (item->t != LB_GLUE || item->g.no_stretch) continue;
 
                 ++item->w;
                 --space_remain;

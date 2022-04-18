@@ -358,11 +358,13 @@ tui_refresh_page(void)
         if (old_hash_len == g_pager->cached_page->hash_len &&
             memcmp(old_hash, g_pager->cached_page->hash, old_hash_len) == 0)
         {
-            tui_status_say("content unchanged since last cache");
+            tui_status_say(
+                "\x1b[31mContent unchanged since last cache.\x1b[0m");
         }
         else
         {
-            tui_status_say("new content since last cache");
+            tui_status_say(
+                "\x1b[32mReceived new content since last cache.\x1b[0m");
         }
     }
 #else
