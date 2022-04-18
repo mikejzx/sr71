@@ -17,6 +17,10 @@ void program_exited(void);
 int
 main(int argc, char **argv)
 {
+    setlocale(LC_ALL, "");
+
+    utf8_init();
+
 #if 0
     const char *word = "hyphenate";
     hyphenate(word, strlen(word));
@@ -117,6 +121,7 @@ main(int argc, char **argv)
         "=> gemini://midnight.pub/\n"
         "=> gemini://rawtext.club/~ploum/2022-03-24-ansi_html.gmi/\n"
         "=> gemini://zaibatsu.circumlunar.space/~solderpunk Zaibatsu - solderpunk\n"
+        "=> gemini://1436.ninja/ broken rendering\n"
         "\n"
         "# Very long heading that should wrap very nicely blah blah blah blah blah\n"
         "This is a test paragraph\n"
@@ -138,10 +143,7 @@ main(int argc, char **argv)
         pager_update_page(-1, 0);
     }
 
-    for(;!g_sigint_caught;)
-    {
-        if (tui_update() < 0) break;
-    }
+    for(;!g_sigint_caught && tui_update() == 0;);
 
     program_exited();
 
@@ -168,4 +170,6 @@ program_exited(void)
 
     free(g_recv->b);
     free(g_state);
+
+    utf8_deinit();
 }

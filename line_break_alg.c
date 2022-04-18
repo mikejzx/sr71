@@ -230,7 +230,7 @@ line_break_prepare(const struct lb_prepare_args *args)
             s_items[s_icount++] = (struct lb_item)
             {
                 .t = LB_BOX,
-                .w = utf8_strnlen_w_formats(c_last + h_last, h - h_last),
+                .w = utf8_width(c_last + h_last, h - h_last),
                 .b =
                 {
                     .content = c_last + h_last,
@@ -251,7 +251,7 @@ line_break_prepare(const struct lb_prepare_args *args)
         s_items[s_icount++] = (struct lb_item)
         {
             .t = LB_BOX,
-            .w = utf8_strnlen_w_formats(c_last + h_last, (c - c_last) - h_last),
+            .w = utf8_width(c_last + h_last, (c - c_last) - h_last),
             .b =
             {
                 .content = c_last + h_last,

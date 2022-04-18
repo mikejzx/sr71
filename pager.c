@@ -346,7 +346,7 @@ pager_paint(bool full)
         #if CLEAR_VI_STYLE
             // Because vi
             line->bytes = strlen(VI_EMPTY_CHAR_STR);
-            line->len = utf8_strnlen_w_formats(VI_EMPTY_CHAR_STR, line->bytes);
+            line->len = VI_EMPTY_CHAR_STR_LEN;
             tui_sayn(VI_EMPTY_CHAR_STR, line->bytes);
         #else
             line->bytes = 0;
@@ -354,14 +354,11 @@ pager_paint(bool full)
         #endif
         }
 
-        // Clear old line
-        tui_cursor_move(
-            (int)line->len + g_pager->margin.l + 1 + line->indent,
-            i + 1 + PAGER_TOP);
-        int clear_count =
-            (int)g_pager->visible_buffer_prev.rows[i].len - (int)line->len +
-            max(g_pager->visible_buffer_prev.rows[i].indent - line->indent, 0);
-        clear_count = max(clear_count, 1);
+        // Clear the old line
+        int clear_count = max(
+            ((int)g_pager->visible_buffer_prev.rows[i].len +
+                g_pager->visible_buffer_prev.rows[i].indent) -
+            ((int)line->len + line->indent), 0) + 1;
         tui_printf("%*s", clear_count, "");
     }
 

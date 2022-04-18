@@ -80,7 +80,7 @@ do \
     int size = (n); \
     int l; \
     if (g_tui->is_writing_status && \
-        (l = utf8_strnlen_w_formats((x), size)) && \
+        (l = utf8_width((x), size)) && \
         g_tui->cursor_x + l >= g_tui->w) \
     { \
         /* Make sure status text doesn't overflow */ \
@@ -90,7 +90,7 @@ do \
     } \
     l = write(STDOUT_FILENO, (x), size); \
     if (g_tui->is_writing_status) \
-        g_tui->cursor_x += utf8_strnlen_w_formats((x), l); \
+        g_tui->cursor_x += utf8_width((x), l); \
 } while(0)
 
 #define tui_say(x) tui_sayn((x), strlen((x)))
@@ -111,7 +111,7 @@ do \
     int count = snprintf(buf, sizeof(buf), __VA_ARGS__); \
     int l; \
     if (g_tui->is_writing_status && \
-        (l = utf8_strnlen_w_formats(buf, count)) && \
+        (l = utf8_width(buf, count)) && \
         g_tui->cursor_x + l >= g_tui->w) \
     { \
         /* Make sure status text doesn't overflow */ \
@@ -121,7 +121,7 @@ do \
     } \
     l = write(STDOUT_FILENO, buf, count); \
     if (g_tui->is_writing_status) \
-        g_tui->cursor_x += utf8_strnlen_w_formats(buf, l); \
+        g_tui->cursor_x += utf8_width(buf, l); \
 } while(0)
 
 /* Print a size */

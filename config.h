@@ -56,6 +56,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 // Set to 1 to use vi-style tilde at end of buffer
 #define CLEAR_VI_STYLE 1
 #define VI_EMPTY_CHAR_STR "\x1b[2m~\x1b[0m"
+#define VI_EMPTY_CHAR_STR_LEN 1
 
 /*
  * Cache

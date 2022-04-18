@@ -150,7 +150,7 @@ search_highlight_matches(void)
 
         tui_cursor_move(
             g_pager->margin.l + 1 + line_begin->indent +
-            utf8_strnlen_w_formats(
+            utf8_width(
                 line_begin->s, match->begin.loc - line_begin->s),
             (match->begin.line - g_pager->scroll) + 1);
 

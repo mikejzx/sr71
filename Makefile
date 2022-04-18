@@ -5,6 +5,7 @@ OBJS=$(patsubst %.c,%.o,$(SRCS))
 DEPS=$(patsubst %.c,%.d,$(SRCS))
 
 CFLAGS=-Og -g -D_GNU_SOURCE -Wpedantic -Wall
+#CFLAGS=-O2 -D_GNU_SOURCE -Wpedantic -Wall
 LDFLAGS=-lcrypto -lssl
 CC=gcc
 RM=rm -f

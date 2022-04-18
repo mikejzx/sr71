@@ -45,7 +45,7 @@ status_line_paint(void)
                 0
             #endif
                 );
-            c->len = utf8_strnlen_w_formats(text, c->bytes);
+            c->len = utf8_width(text, c->bytes);
 
             // Don't render whole text if it exceeds terminal width
             if (c->len > g_tui->w - 4)

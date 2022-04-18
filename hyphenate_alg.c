@@ -33,6 +33,18 @@ hyphenate(const char *word, size_t word_len)
             return;
         }
 
+        // Check if the word contains multi-byte/UTF-8 sequences.  If so then
+        // we give up attempting to hyphenate the word, as if we try split it
+        // there's a good chance that we will create a split between the
+        // multibyte sequence and screw up the width for the line breaking
+        // algorithm
+        if ((*c & 0xC0) == 0x80)
+        {
+            s_count = 0;
+            s_cur = -1;
+            return;
+        }
+
         if (c - word > 3 &&
             c - word < word_len - 2 &&
             (c - word) % 2 == 0)

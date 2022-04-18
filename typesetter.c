@@ -66,7 +66,7 @@ typesetter_reinit(struct typesetter *t)
             j >= t->raw_lines[l].s && strchr("\r\n \t", *j) != NULL;
             --j, --t->raw_lines[l].bytes);
 
-        t->raw_lines[l].len = utf8_strnlen_w_formats(
+        t->raw_lines[l].len = utf8_width(
             &rawbuf[l_prev + 1],
             t->raw_lines[l].bytes);
 
@@ -87,7 +87,7 @@ typesetter_reinit(struct typesetter *t)
             j >= start && strchr("\r\n \t", *j) != NULL && line->bytes > 0;
             --j, --line->bytes);
 
-        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
+        line->len = utf8_width(line->s, line->bytes);
 
         start = c + 1;
         ++line;
@@ -268,7 +268,7 @@ typeset_gemtext(
         if (!line_started) break; \
         line_started = false; \
         line->bytes = buffer_pos - line->s; \
-        line->len = utf8_strnlen_w_formats(line->s, line->bytes); \
+        line->len = utf8_width(line->s, line->bytes); \
         line->raw_dist = gemtext.raw_dist; \
         line->indent = gemtext.indent; \
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >= \
@@ -442,7 +442,7 @@ typeset_gemtext(
                     for (;
                         *i && (*i == ' ' || *i == '\t') && i <= rawline_end;
                         ++i);
-                    gemtext.hang = utf8_strnlen_w_formats(
+                    gemtext.hang = utf8_width(
                         rawline->s + heading_level + 1,
                         i - (rawline->s + heading_level + 1));
                     break;
@@ -605,7 +605,7 @@ typeset_gemtext(
             // headings to wrap at correct point.
             .skip = line->is_heading
                 ? 0
-                : utf8_strnlen_w_formats(line->s, buffer_pos - line->s),
+                : utf8_width(line->s, buffer_pos - line->s),
         };
         line_break_prepare(&pa);
     #if TYPESET_LINEBREAK_GREEDY
@@ -688,7 +688,6 @@ typeset_plaintext(
 
         // Plaintext is always rendered verbatim
         line->s = buffer_pos;
-        line->bytes = 0;
         line->raw_index = raw_index;
         line->raw_dist = 0;
         line->is_heading = false;
@@ -696,16 +695,25 @@ typeset_plaintext(
         line->indent = 0;
         line->prefix_len = 0;
 
+        if (rawline->bytes < 1)
+        {
+            line->bytes = 0;
+            line->len = 0;
+            goto next_line;
+        }
+
         const size_t n_bytes = rawline->bytes;
         BUFFER_CHECK_SIZE(n_bytes);
         strncpy(buffer_pos,
             rawline->s,
             min(n_bytes, buffer_end_pos - buffer_pos));
-        line->bytes += n_bytes;
         buffer_pos += n_bytes;
 
         // Finish line
-        line->len = utf8_strnlen_w_formats(line->s, line->bytes);
+        line->len = rawline->len;
+        line->bytes = n_bytes;
+
+    next_line:
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
             b->lines_capacity)
         {
@@ -892,10 +900,10 @@ typeset_gophermap(
         }
 
         // Write display string
-        LINE_STRNCPY(item_display, item_display_len + 1);
+        LINE_STRNCPY(item_display, item_display_len);
 
         // Finish line
-        line->len = utf8_strnlen_w_formats(line->s, line->bytes) - 1;
+        line->len = utf8_width(line->s, line->bytes);
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >=
             b->lines_capacity)
         {

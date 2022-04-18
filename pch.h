@@ -4,6 +4,8 @@
 #define PROGRAM_NAME "sr71"
 #include "config.h"
 
+#define _XOPEN_SOURCE
+
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -20,6 +22,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 // Terminals
 #include <sys/ioctl.h>
@@ -38,5 +41,6 @@
 //#include <openssl/err.h>
 
 #include "util.h"
+#include "utf8.h"
 
 #endif
