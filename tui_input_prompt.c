@@ -549,8 +549,8 @@ buffer_protocol_cycle(void)
     // Protocols that we allow cycling through
     static const char *PROTOCOL_SWITCH_AVAILABLE[] =
     {
-        PROTOCOL_NAMES[PROTOCOL_GEMINI],
-        PROTOCOL_NAMES[PROTOCOL_GOPHER],
+        PROTOCOL_INFOS[PROTOCOL_GEMINI].name,
+        PROTOCOL_INFOS[PROTOCOL_GOPHER].name,
     };
     static const size_t PROTOCOL_SWITCH_AVAILABLE_COUNT =
         sizeof(PROTOCOL_SWITCH_AVAILABLE) / sizeof(const char *);

@@ -136,8 +136,7 @@ main(int argc, char **argv)
         recv_buffer_check_size(g_recv->size);
         memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
         mime_parse(&g_recv->mime, MIME_GEMTEXT, strlen(MIME_GEMTEXT));
-        const char *DEFAULT_URI = "about:home";
-        g_state->uri = uri_parse(DEFAULT_URI, strlen(DEFAULT_URI));
+        g_state->uri = uri_parse(URI_INTERNAL_BLANK, strlen(URI_INTERNAL_BLANK));
 
         // Typeset the content
         pager_update_page(-1, 0);

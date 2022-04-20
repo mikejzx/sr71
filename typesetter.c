@@ -419,6 +419,15 @@ typeset_gemtext(
             gemtext.raw_bytes_skip = 4;
             break;
 
+        // Level 4 headings are non-standard, but we support them nevertheless
+        // as there are some pages which decide to use them anyway
+        case 4:
+            gemtext.esc = buffer_pos;
+            LINE_STRNCPY_LIT(COLOUR_HEADING4);
+            gemtext.esc_len = buffer_pos - gemtext.esc;
+            gemtext.raw_bytes_skip = 5;
+            break;
+
         default: break;
         }
         if (heading_level)

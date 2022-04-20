@@ -10,3 +10,5 @@ TODO
 trusted_hosts
 cache/*
 cache
+history.log
+test.txt

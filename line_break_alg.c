@@ -850,8 +850,9 @@ word_is_end_of_sentence(const char *s, size_t len)
     // two characters then we assume it is.
     if (len == 2) return false;
 
-    // If the second-last character is punctuation, e.g. "etc.).", then we need
-    // to skip the test below or else we get false negatives like the above.
+    // If the second-last character is punctuation, e.g. the parenthesis in
+    // "etc.).", then we need to skip the test below or else we get false
+    // negatives like the above.
     if (!ispunct(s[len - 2]) && s[len - 2] != '.')
     {
         // Test for abbreviations like e.g. and i.e., by checking if more
@@ -876,8 +877,6 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
     // we want to ensure that double-spaces after sentences are applied (if
     // TYPESET_FORCE_DOUBLE_SPACE_SENTENCE is set).
     bool
-    //is_last_line = (!s_bp_reversed && s_bp_cur == s_bpcount - 1) ||
-    //    (s_bp_reversed && s_bp_cur == s_bpcount - 1),
     is_last_line = s_bp_cur == s_bpcount - 1,
     is_first_line = (!s_bp_reversed && s_bp_cur == s_bpcount - 1) ||
         (s_bp_reversed && s_bp_cur == 0);
@@ -908,10 +907,11 @@ justify_text(struct lb_item *restrict first, struct lb_item *restrict last)
         }
 
         // Get following glue and increase space
-        struct lb_item *glue = item + 1;
-        if (glue >= last ||
-            glue->t != LB_GLUE ||
-            glue->g.no_stretch) continue;
+        struct lb_item *glue;
+        for (glue = item + 1;
+            glue < last && (glue->t != LB_GLUE || glue->g.no_stretch);
+            ++glue);
+        if (glue >= last) continue;
         ++glue->w;
         --space_remain;
     }

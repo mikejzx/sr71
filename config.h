@@ -30,6 +30,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 #define COLOUR_HEADING1 "\x1b[1;36m"
 #define COLOUR_HEADING2 "\x1b[36m"
 #define COLOUR_HEADING3 "\x1b[1m"
+#define COLOUR_HEADING4 "\x1b[1;34m"
 
 // Whether to do fancy highlighting in URI of status line.  This will e.g. make
 // hostname in a brighter colour, and will highlight gopher item type.
@@ -64,6 +65,11 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 
 // Build with persistent disk caching
 #define CACHE_USE_DISK 1
+
+/*
+ * History
+ */
+#define HISTORY_LOG_ENABLED 1
 
 /*
  * Paths

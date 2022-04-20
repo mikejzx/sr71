@@ -488,6 +488,23 @@ tui_go_to_uri(
         }
         break;
 
+    case PROTOCOL_INTERNAL:
+        // Internal page
+        if (strncmp(uri_in->hostname, URI_INTERNAL_HISTORY_RAW, URI_HOSTNAME_MAX) == 0)
+        {
+            // Load history page
+            success = history_log_display();
+        }
+        else
+        {
+            success = -1;
+            tui_status_begin();
+            tui_printf("No such internal page '%s'", uri_in->hostname);
+            tui_status_end();
+        }
+
+        break;
+
     default:
         success = -1;
         break;
@@ -536,7 +553,7 @@ tui_go_to_uri(
             g_recv->b_alt = NULL;
         }
 
-        // Push to undo/redo history
+        // Push to history (undo/redo and history log)
         if (push_hist)
         {
             history_push(&g_state->uri);

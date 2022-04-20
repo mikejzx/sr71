@@ -10,6 +10,14 @@
 #define URI_STRING_MAX \
     (URI_HOSTNAME_MAX + URI_PATH_MAX + PROTOCOL_NAME_MAX + URI_QUERY_MAX)
 
+// Internal URI names
+#define URI_INTERNAL_PREFIX_RAW "internal"
+#define URI_INTERNAL_BLANK_RAW "blank"
+#define URI_INTERNAL_HISTORY_RAW "history"
+#define URI_INTERNAL_PREFIX URI_INTERNAL_PREFIX_RAW ":"
+#define URI_INTERNAL_BLANK URI_INTERNAL_PREFIX URI_INTERNAL_BLANK_RAW
+#define URI_INTERNAL_HISTORY URI_INTERNAL_PREFIX URI_INTERNAL_HISTORY_RAW
+
 enum uri_protocol
 {
     PROTOCOL_NONE = 0,
@@ -19,23 +27,39 @@ enum uri_protocol
     PROTOCOL_FINGER,
     PROTOCOL_FILE,
 
-    // Special protocols which have no '//'
+    PROTOCOL_INTERNAL,
     PROTOCOL_MAILTO,
     //PROTOCOL_MAGNET,
 
     PROTOCOL_COUNT
 };
 
-static const char *const PROTOCOL_NAMES[PROTOCOL_COUNT] =
+/* Used to differentiate between scheme: and scheme:// prefices */
+enum uri_protocol_scheme_prefix_type
 {
-    [PROTOCOL_NONE]    = "",
-    [PROTOCOL_UNKNOWN] = "",
-    [PROTOCOL_GEMINI]  = "gemini",
-    [PROTOCOL_GOPHER]  = "gopher",
-    [PROTOCOL_FINGER]  = "finger",
-    [PROTOCOL_FILE]    = "file",
-    [PROTOCOL_MAILTO]  = "mailto",
-    //[PROTOCOL_MAGNET]  = "magnet",
+    // For :// protocols like 'gemini://'
+    PROTOCOL_PREFIX_NORMAL = 0,
+
+    // For : protocols like 'mailto:'
+    PROTOCOL_PREFIX_NO_SLASHES,
+};
+
+static const struct uri_protocol_info
+{
+    const char *const name;
+    const enum uri_protocol_scheme_prefix_type prefix_type;
+} PROTOCOL_INFOS[PROTOCOL_COUNT] =
+{
+    [PROTOCOL_NONE]      = { "",         PROTOCOL_PREFIX_NORMAL },
+    [PROTOCOL_UNKNOWN]   = { "",         PROTOCOL_PREFIX_NORMAL },
+    [PROTOCOL_GEMINI]    = { "gemini",   PROTOCOL_PREFIX_NORMAL },
+    [PROTOCOL_GOPHER]    = { "gopher",   PROTOCOL_PREFIX_NORMAL },
+    [PROTOCOL_FINGER]    = { "finger",   PROTOCOL_PREFIX_NORMAL },
+    [PROTOCOL_FILE]      = { "file",     PROTOCOL_PREFIX_NORMAL },
+    [PROTOCOL_INTERNAL]  = { URI_INTERNAL_PREFIX_RAW,
+                                         PROTOCOL_PREFIX_NO_SLASHES },
+    [PROTOCOL_MAILTO]    = { "mailto",   PROTOCOL_PREFIX_NO_SLASHES },
+    //[PROTOCOL_MAGNET]  = { "magnet",   PROTOCOL_PREFIX_NO_SLASHES },
 };
 
 /* Lookup a protocol from string */
@@ -44,7 +68,7 @@ lookup_protocol(const char *s, size_t l)
 {
     for (int i = 0; i < PROTOCOL_COUNT; ++i)
     {
-        if (strncmp(s, PROTOCOL_NAMES[i], l) == 0)
+        if (strncmp(s, PROTOCOL_INFOS[i].name, l) == 0)
         {
             return (enum uri_protocol)i;
         }

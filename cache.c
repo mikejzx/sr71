@@ -505,8 +505,11 @@ cache_push_current(void)
 {
     struct cached_item *item = NULL;
 
-    // For now we don't cache pages that have a URI query
-    if (*g_state->uri.query) return NULL;
+    if (
+        // For now we don't cache pages that have a URI query
+        *g_state->uri.query ||
+        // Don't cache internal pages
+        g_state->uri.protocol == PROTOCOL_INTERNAL) return NULL;
 
     // Check if the URI is in the cache already; so we can update it
     for (int i = 0; i < s_cache.count; ++i)

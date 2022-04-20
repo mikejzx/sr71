@@ -11,19 +11,18 @@ uri_parse(const char *uri, int uri_len)
     // Find protocol:
     int colon_pos = strcspn(uri, ":");
     size_t protocol_name_len = 0;
-    if (colon_pos < uri_len &&
-        (strncmp(uri + colon_pos, "://", strlen("://")) == 0 ||
-         strncmp(uri, PROTOCOL_NAMES[PROTOCOL_MAILTO], colon_pos) == 0))
+    if (colon_pos < uri_len)
     {
         strncpy(result.protocol_str, uri, (size_t)colon_pos);
         result.protocol = lookup_protocol(result.protocol_str, colon_pos);
-        switch(result.protocol)
+        switch(PROTOCOL_INFOS[result.protocol].prefix_type)
         {
-        case PROTOCOL_MAILTO:
-            protocol_name_len = (size_t)colon_pos + strlen(":");
-            break;
         default:
+        case PROTOCOL_PREFIX_NORMAL:
             protocol_name_len = (size_t)colon_pos + strlen("://");
+            break;
+        case PROTOCOL_PREFIX_NO_SLASHES:
+            protocol_name_len = (size_t)colon_pos + strlen(":");
             break;
         }
     }
@@ -120,7 +119,7 @@ uri_parse(const char *uri, int uri_len)
         "  Port    : %d\n"
         "  Path    : %s\n"
         "  Query   : %s\n",
-        uri, PROTOCOL_NAMES[result.protocol],
+        uri, PROTOCOL_INFOS[result.protocol].name,
         result.hostname, result.port, result.path, result.query);
 #endif
     return result;
@@ -143,14 +142,15 @@ uri_str(
         uri->protocol == PROTOCOL_UNKNOWN ||
         flags & URI_FLAGS_NO_PROTOCOL_BIT))
     {
-        strcpy(scheme, PROTOCOL_NAMES[uri->protocol]);
-        switch(uri->protocol)
+        strcpy(scheme, PROTOCOL_INFOS[uri->protocol].name);
+        switch(PROTOCOL_INFOS[uri->protocol].prefix_type)
         {
-        case PROTOCOL_MAILTO:
-            strcat(scheme, ":");
-            break;
         default:
+        case PROTOCOL_PREFIX_NORMAL:
             strcat(scheme, "://");
+            break;
+        case PROTOCOL_PREFIX_NO_SLASHES:
+            strcat(scheme, ":");
             break;
         }
     }

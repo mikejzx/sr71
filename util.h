@@ -19,4 +19,9 @@ int connect_socket_to(const char *, int port);
  */
 int timestamp_age_human_readable(time_t, char *, size_t);
 
+// Convert difference between timestamps to approximate number of days
+int timestamp_age_days_approx(time_t, time_t);
+
+char *getline_reverse(char *, int, FILE *);
+
 #endif

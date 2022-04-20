@@ -281,6 +281,15 @@ tui_input_common(const char *buf, const ssize_t buf_len)
     case 'n': search_next(); return TUI_OK;
     case 'N': search_prev(); return TUI_OK;
 
+    /* H to view history log */
+    case 'H':
+    {
+        struct uri uri = uri_parse(
+            URI_INTERNAL_HISTORY,
+            strlen(URI_INTERNAL_HISTORY));
+        tui_go_to_uri(&uri, true, true);
+    } return TUI_OK;
+
     default: break;
     }
 

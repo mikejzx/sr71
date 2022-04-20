@@ -209,6 +209,13 @@ timestamp_age_human_readable(time_t ts, char *buf, size_t buf_len)
             "%d minutes ago",
             (int)diff / 60);
     }
+    else if (diff < 60 * 60 * 2)
+    {
+        // Within last hour
+        static const char *STR_1HOUR = "1 hour ago";
+        strncpy(buf, STR_1HOUR, buf_len);
+        return strlen(STR_1HOUR);
+    }
     else if (diff < 60 * 60 * 24)
     {
         // Within last 24 hours; print in hours
@@ -218,7 +225,7 @@ timestamp_age_human_readable(time_t ts, char *buf, size_t buf_len)
     }
     else if (diff < 60 * 60 * 24 * 2)
     {
-        // Within last day; print yesterday
+        // Within last day
         static const char *STR_YESTERDAY = "yesterday";
         strncpy(buf, STR_YESTERDAY, buf_len);
         return strlen(STR_YESTERDAY);
@@ -232,4 +239,69 @@ timestamp_age_human_readable(time_t ts, char *buf, size_t buf_len)
     }
 
     return 0;
+}
+
+int
+timestamp_age_days_approx(time_t from, time_t to)
+{
+    time_t diff = difftime(to, from);
+
+    return diff / (60 * 60 * 24);
+}
+
+/* Derived from
+ * https://stackoverflow.com/questions/14834267/
+ *         reading-a-text-file-backwards-in-c
+ */
+char *
+getline_reverse(char *buf, int n, FILE *fp)
+{
+    long fpos;
+
+    if (n <= 1 ||
+        (fpos = ftell(fp)) == -1 ||
+        !fpos)
+    {
+        return NULL;
+    }
+
+    int cpos = n - 1;
+    buf[cpos] = '\0';
+
+    for (int first = 1;;)
+    {
+        int c;
+        if (fseek(fp, --fpos, SEEK_SET) != 0 ||
+            (c = fgetc(fp)) == EOF)
+        {
+            return NULL;
+        }
+
+        // End on the new-line
+        if (c == '\n' && first == 0)
+        {
+            break;
+        }
+        first = 0;
+
+        if (c != '\r' && c != '\n')
+        {
+            unsigned char ch = c;
+            if (cpos == 0)
+            {
+                memmove(buf + 1, buf, n - 2);
+                ++cpos;
+            }
+            memcpy(buf + (--cpos), &ch, 1);
+        }
+
+        if (fpos == 0)
+        {
+            fseek(fp, 0, SEEK_SET);
+            break;
+        }
+    }
+
+    memmove(buf, buf + cpos, n - cpos);
+    return buf;
 }
