@@ -10,7 +10,7 @@
 
 // Max number of characters allowed in the input buffer and prompt
 #define TUI_INPUT_BUFFER_MAX 256
-#define TUI_INPUT_PROMPT_MAX 32
+#define TUI_INPUT_PROMPT_MAX 48
 
 enum tui_status
 {
@@ -51,6 +51,9 @@ enum tui_input_mode
     // Prompt: yes/no question (e.g. quit confirmation)
     TUI_MODE_YES_NO,
 
+    // Prompt: yes/no/cancel question (e.g. favourite toggle)
+    TUI_MODE_YES_NO_CANCEL,
+
     TUI_MODE_COUNT
 };
 
@@ -78,6 +81,9 @@ struct tui_input
 
     // Input complete callback
     void (*cb_complete)(void);
+
+    // Complete callback "parameters" set by the input handler
+    bool param_yesno;
 };
 
 extern struct tui_input *g_in;

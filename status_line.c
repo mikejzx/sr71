@@ -67,15 +67,15 @@ status_line_paint(void)
             {
             case 0:
                 c->len = snprintf(text, sizeof(text),
-                    "%s  top", g_recv->mime.str);
+                    " %s  top", g_recv->mime.str);
                 break;
             case 100:
                 c->len = snprintf(text, sizeof(text),
-                    "%s  bottom", g_recv->mime.str);
+                    " %s  bottom", g_recv->mime.str);
                 break;
             default:
                 c->len = snprintf(text, sizeof(text),
-                    "%s  %d%%", g_recv->mime.str, scroll_percent);
+                    " %s  %d%%", g_recv->mime.str, scroll_percent);
                 break;
             }
             c->bytes = c->len;

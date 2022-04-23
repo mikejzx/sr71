@@ -1,13 +1,14 @@
 #include "pch.h"
 #include "cache.h"
+#include "favourites.h"
 #include "sighandle.h"
 #include "state.h"
 #include "status_line.h"
 #include "tofu.h"
 #include "tui.h"
 
-#include "line_break_alg.h"
-#include "hyphenate_alg.h"
+//#include "line_break_alg.h"
+//#include "hyphenate_alg.h"
 
 struct state *g_state;
 struct recv_buffer *g_recv;
@@ -48,6 +49,7 @@ main(int argc, char **argv)
     g_recv->b_alt = NULL;
 
     history_init();
+    favourites_init();
 
     sighandle_register();
 
@@ -94,6 +96,7 @@ main(int argc, char **argv)
     }
 
     // Set some temporary content
+#if 0
     static const char *PAGER_CONTENT =
         "# sr71\n"
         "\n"
@@ -130,8 +133,10 @@ main(int argc, char **argv)
         "This is a test paragraph\n"
         "Stupidly long word here that hopefullywillgetdetectedbythesearchingalgorithmthingtestintetsfdidsifisdfidsifsdiihyphenationsrtiewroewirewoirweiriweiriweri\n"
         "This is a test paragraph\n";
+#endif
     if (argmode == CMD_ARGS_NONE)
     {
+    #if 0
         g_recv->size = strlen(PAGER_CONTENT) + 1;
         recv_buffer_check_size(g_recv->size);
         memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
@@ -140,6 +145,12 @@ main(int argc, char **argv)
 
         // Typeset the content
         pager_update_page(-1, 0);
+    #else
+        struct uri uri = uri_parse(
+            URI_INTERNAL_FAVOURITES,
+            strlen(URI_INTERNAL_FAVOURITES));
+        tui_go_to_uri(&uri, true, true);
+    #endif
     }
 
     for(;!g_sigint_caught && tui_update() == 0;);
@@ -165,6 +176,7 @@ program_exited(void)
 
     tui_cleanup();
 
+    favourites_deinit();
     history_deinit();
 
     free(g_recv->b);

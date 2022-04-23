@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "cache.h"
+#include "favourites.h"
 #include "local.h"
 #include "pager.h"
 #include "sighandle.h"
@@ -207,8 +208,8 @@ tui_select_next_link(void)
 {
     if (!g_pager->link_count) return;
 
-    g_pager->selected_link_index =
-        (g_pager->selected_link_index + 1) % g_pager->link_count;
+    g_pager->link_index =
+        (g_pager->link_index + 1) % g_pager->link_count;
 }
 
 /* Select the previous link on the page */
@@ -217,20 +218,19 @@ tui_select_prev_link(void)
 {
     if (!g_pager->link_count) return;
 
-    --g_pager->selected_link_index;
-    if (g_pager->selected_link_index < 0)
-        g_pager->selected_link_index = g_pager->link_count - 1;
+    --g_pager->link_index;
+    if (g_pager->link_index < 0)
+        g_pager->link_index = g_pager->link_count - 1;
 }
 
 /* Follow selected link */
 void
 tui_follow_selected_link(void)
 {
-    if (g_pager->selected_link_index < 0 ||
-        g_pager->selected_link_index >= g_pager->link_count) return;
+    if (!pager_has_link()) return;
 
     tui_go_to_uri(
-        &g_pager->links[g_pager->selected_link_index].uri,
+        &g_pager->links[g_pager->link_index].uri,
         true,
         false);
 }
@@ -247,8 +247,7 @@ tui_update_link_peek(void)
     tui_printf("%*s", g_tui->w - cursor_old, "");
     tui_cursor_move(cursor_old, g_tui->h);
 
-    if (g_pager->selected_link_index < 0 ||
-        g_pager->selected_link_index >= g_pager->link_count)
+    if (!pager_has_link())
     {
         // Don't print anything else
         goto end;
@@ -257,7 +256,7 @@ tui_update_link_peek(void)
     // Convert selected URI to a string
     char uri_name[URI_STRING_MAX];
     uri_str(
-        &g_pager->links[g_pager->selected_link_index].uri,
+        &g_pager->links[g_pager->link_index].uri,
         uri_name,
         g_tui->w,
         URI_FLAGS_NONE);
@@ -370,6 +369,72 @@ tui_refresh_page(void)
 #else
     (void)status;
 #endif
+}
+
+// Set a page to a favourite, depending on current input state
+void
+tui_favourite_set(void)
+{
+    const struct uri *u = &g_state->uri;
+    struct fav_node *n = favourites_find(u);
+    if (g_in->param_yesno)
+    {
+        if (n)
+        {
+            tui_status_say("page already in favourites");
+        }
+        else
+        {
+            favourites_push_uri(u);
+            tui_status_say("\x1b[32madded page to favourites\x1b[0m");
+        }
+    }
+    else if (n)
+    {
+        favourites_delete(n);
+        tui_status_say("\x1b[31mremoved page from favourites\x1b[0m");
+    }
+}
+
+// Toggle a page's favourite state
+void
+tui_favourite_toggle(void)
+{
+    // If current page is favourited; remove it.  If it's not favourited, add
+    // it.
+    const struct uri *u = &g_state->uri;
+    struct fav_node *n = favourites_find(u);
+    if (n)
+    {
+        favourites_delete(n);
+        tui_status_say("\x1b[31mremoved page from favourites\x1b[0m");
+    }
+    else
+    {
+        favourites_push_uri(u);
+        tui_status_say("\x1b[32madded page to favourites\x1b[0m");
+    }
+}
+
+/* Favourites page only: delete the selected link from favourites */
+void
+tui_favourite_delete_selected(void)
+{
+    if (!pager_has_link()) return;
+
+    struct fav_node *n =
+        favourites_find(&g_pager->links[g_pager->link_index].uri);
+    if (!n) return;
+
+    favourites_delete(n);
+
+    // Update the favourites page that we are guaranteed to be on
+    struct uri uri_to = uri_parse(
+        URI_INTERNAL_FAVOURITES,
+        strlen(URI_INTERNAL_FAVOURITES));
+    tui_go_to_uri(&uri_to, false, true);
+
+    tui_status_say("page unfavourited");
 }
 
 /* Goto a site */
@@ -489,11 +554,19 @@ tui_go_to_uri(
         break;
 
     case PROTOCOL_INTERNAL:
-        // Internal page
-        if (strncmp(uri_in->hostname, URI_INTERNAL_HISTORY_RAW, URI_HOSTNAME_MAX) == 0)
+        // Internal page; determine which it is
+
+        if (strncmp(uri_in->hostname,
+            URI_INTERNAL_HISTORY_RAW, URI_HOSTNAME_MAX) == 0)
         {
             // Load history page
             success = history_log_display();
+        }
+        else if (strncmp(uri_in->hostname,
+            URI_INTERNAL_FAVOURITES_RAW, URI_HOSTNAME_MAX) == 0)
+        {
+            // Load favourites page
+            success = favourites_display();
         }
         else
         {
@@ -517,10 +590,8 @@ tui_go_to_uri(
         // Update the last selection/scroll of last cached page
         if (g_pager->cached_page)
         {
-            g_pager->cached_page->session.last_sel =
-                g_pager->selected_link_index;
-            g_pager->cached_page->session.last_scroll =
-                g_pager->scroll;
+            g_pager->cached_page->session.last_sel = g_pager->link_index;
+            g_pager->cached_page->session.last_scroll = g_pager->scroll;
         }
 
         // Update current URI state

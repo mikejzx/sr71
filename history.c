@@ -171,8 +171,7 @@ history_log_display(void)
     // Set up the main header, etc.
     size_t buf_tmp_size = URI_STRING_MAX;
     char *buf_tmp = malloc(buf_tmp_size);
-    size_t bytes = snprintf(buf_tmp, buf_tmp_size,
-        "# Browsing history\n");
+    size_t bytes = snprintf(buf_tmp, buf_tmp_size, "# Browsing history\n");
     recv_buffer_check_size(bytes);
     strncpy(g_recv->b, buf_tmp, bytes);
     g_recv->size = bytes;

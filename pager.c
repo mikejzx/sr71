@@ -42,7 +42,7 @@ void
 pager_update_page(int selected, int scroll)
 {
     g_pager->link_count = 0;
-    g_pager->selected_link_index = selected;
+    g_pager->link_index = selected;
     g_pager->scroll = scroll;
 
     // Reset marks
@@ -242,7 +242,7 @@ void
 pager_paint(bool full)
 {
     bool updating_links =
-        g_pager->selected_link_index_prev != g_pager->selected_link_index;
+        g_pager->link_index_prev != g_pager->link_index;
 
     // Partial updates only run if selected link changed
     if (!full && !updating_links) return;
@@ -279,8 +279,8 @@ pager_paint(bool full)
                 // that was deselected
                 if (!full &&
                     updating_links &&
-                    l != g_pager->selected_link_index &&
-                    l != g_pager->selected_link_index_prev)
+                    l != g_pager->link_index &&
+                    l != g_pager->link_index_prev)
                 {
                     continue;
                 }
@@ -298,7 +298,7 @@ pager_paint(bool full)
                     }
                     will_print = true;
 
-                    if (l == g_pager->selected_link_index)
+                    if (l == g_pager->link_index)
                     {
                         tui_say(COLOUR_PAGER_LINK_SELECTED);
                     }
@@ -369,7 +369,7 @@ pager_paint(bool full)
     struct pager_buffer_line *tmp = g_pager->visible_buffer.rows;
     g_pager->visible_buffer.rows = g_pager->visible_buffer_prev.rows;
     g_pager->visible_buffer_prev.rows = tmp;
-    g_pager->selected_link_index_prev = g_pager->selected_link_index;
+    g_pager->link_index_prev = g_pager->link_index;
 }
 
 static void
@@ -415,7 +415,7 @@ pager_select_first_link_visible(void)
         // Skip lines that are before where the visible buffer starts
         if (g_pager->links[i].line_index < g_pager->scroll) continue;
 
-        g_pager->selected_link_index = i;
+        g_pager->link_index = i;
         return;
     }
 }
@@ -431,7 +431,7 @@ pager_select_last_link_visible(void)
         if (g_pager->links[i].line_index >=
             g_pager->scroll + g_pager->visible_buffer.h) continue;
 
-        g_pager->selected_link_index = i;
+        g_pager->link_index = i;
         return;
     }
 }

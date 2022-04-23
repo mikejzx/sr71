@@ -64,6 +64,9 @@ void tui_search_start_forward(void);
 void tui_search_start_reverse(void);
 void tui_save_to_file(void);
 void tui_refresh_page(void);
+void tui_favourite_set(void);
+void tui_favourite_toggle(void);
+void tui_favourite_delete_selected(void);
 
 /* Move cursor */
 #define tui_cursor_move(x, y) \

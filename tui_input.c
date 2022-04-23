@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "favourites.h"
 #include "pager.h"
 #include "state.h"
 #include "tui.h"
@@ -22,16 +23,17 @@ static const struct tui_input_handler
     const enum tui_status(*func)(const char *, const ssize_t);
 } TUI_INPUT_HANDLERS[TUI_MODE_COUNT] =
 {
-    [TUI_MODE_UNKNOWN]      = { NULL                      },
-    [TUI_MODE_NORMAL]       = { tui_input_normal          },
-    [TUI_MODE_COMMAND]      = { NULL                      },
-    [TUI_MODE_INPUT]        = { tui_input_prompt_text     },
-    [TUI_MODE_INPUT_SECRET] = { tui_input_prompt_text     },
-    [TUI_MODE_LINKS]        = { tui_input_links           },
-    [TUI_MODE_MARK_SET]     = { tui_input_prompt_register },
-    [TUI_MODE_MARK_FOLLOW]  = { tui_input_prompt_register },
-    [TUI_MODE_SEARCH]       = { tui_input_prompt_text     },
-    [TUI_MODE_YES_NO]       = { tui_input_prompt_yesno    },
+    [TUI_MODE_UNKNOWN]       = { NULL                         },
+    [TUI_MODE_NORMAL]        = { tui_input_normal             },
+    [TUI_MODE_COMMAND]       = { NULL                         },
+    [TUI_MODE_INPUT]         = { tui_input_prompt_text        },
+    [TUI_MODE_INPUT_SECRET]  = { tui_input_prompt_text        },
+    [TUI_MODE_LINKS]         = { tui_input_links              },
+    [TUI_MODE_MARK_SET]      = { tui_input_prompt_register    },
+    [TUI_MODE_MARK_FOLLOW]   = { tui_input_prompt_register    },
+    [TUI_MODE_SEARCH]        = { tui_input_prompt_text        },
+    [TUI_MODE_YES_NO]        = { tui_input_prompt_yesno       },
+    [TUI_MODE_YES_NO_CANCEL] = { tui_input_prompt_yesnocancel },
 };
 
 /* Special flags for movement functions */
@@ -290,6 +292,46 @@ tui_input_common(const char *buf, const ssize_t buf_len)
         tui_go_to_uri(&uri, true, true);
     } return TUI_OK;
 
+    /* B to view favourites */
+    case 'B':
+    {
+        struct uri uri = uri_parse(
+            URI_INTERNAL_FAVOURITES,
+            strlen(URI_INTERNAL_FAVOURITES));
+        tui_go_to_uri(&uri, true, true);
+    } return TUI_OK;
+
+    /* F to toggle favourite */
+    case 'F':
+    {
+    #if TUI_FAVOURITE_TOGGLE
+        tui_favourite_toggle();
+    #else
+        tui_input_prompt_begin(
+            TUI_MODE_YES_NO_CANCEL,
+            "favourite page? (Y)es, (N)o, (C)ancel", 0,
+            NULL,
+            tui_favourite_set);
+    #endif
+    } return TUI_OK;
+
+    /* Keybinds specific to Favourites page */
+    case 'D':
+    {
+        // Make sure we are on favourites page
+        if (!favourites_is_viewing()) return TUI_OK;
+
+        // Need a favourite to be selected
+        if (!pager_has_link()) return TUI_OK;
+
+        tui_input_prompt_begin(
+            TUI_MODE_YES_NO,
+            "unfavourite the selected link? (Y/n)", 0,
+            NULL,
+            tui_favourite_delete_selected);
+
+    } return TUI_OK;
+
     default: break;
     }
 
@@ -335,8 +377,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
     {
         // Get URI to edit
         struct uri *uri;
-        if (g_pager->selected_link_index < 0 ||
-            g_pager->selected_link_index >= g_pager->link_count)
+        if (!pager_has_link())
         {
             // Use current page URI
             uri = &g_state->uri;
@@ -344,7 +385,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
         else
         {
             // Use selected link URI
-            uri = &g_pager->links[g_pager->selected_link_index].uri;
+            uri = &g_pager->links[g_pager->link_index].uri;
         }
 
         char uristr[URI_STRING_MAX];
@@ -401,14 +442,13 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
         // Put the correct index in the buffer
         if (is_digit)
         {
-            g_pager->selected_link_index = atoi(buf);
+            g_pager->link_index = atoi(buf);
         }
         else
         {
             // Get the link that is at the top/bottom of the page, or increment
             // current index (if there is one)
-            if (g_pager->selected_link_index >= 0 &&
-                g_pager->selected_link_index < g_pager->link_count)
+            if (pager_has_link())
             {
                 if (*buf == INCHAR_LINK_NEXT ||
                     *buf == INCHAR_LINK_NEXT_ALT) tui_select_next_link();
@@ -431,7 +471,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
                 g_in->buffer,
                 sizeof(g_in->buffer),
                 "%d",
-                g_pager->selected_link_index);
+                g_pager->link_index);
             tui_status_begin_soft();
             tui_say(g_in->buffer);
             tui_cursor_move(g_in->prompt_len + 1 + g_in->caret, g_tui->h);
@@ -467,13 +507,12 @@ tui_input_links(const char *buf, const ssize_t buf_len)
     case 'e':
     {
         struct uri *uri;
-        if (g_pager->selected_link_index < 0 ||
-            g_pager->selected_link_index >= g_pager->link_count)
+        if (!pager_has_link())
         {
             // No selected link
             return TUI_OK;
         }
-        uri = &g_pager->links[g_pager->selected_link_index].uri;
+        uri = &g_pager->links[g_pager->link_index].uri;
 
         char uristr[URI_STRING_MAX];
         uri_str(uri, uristr, sizeof(uristr), 0);
@@ -501,7 +540,7 @@ tui_input_links(const char *buf, const ssize_t buf_len)
             g_in->buffer,
             sizeof(g_in->buffer),
             "%d",
-            g_pager->selected_link_index);
+            g_pager->link_index);
 
         // Draw status text
         tui_status_begin_soft();
@@ -529,7 +568,7 @@ tui_input_links(const char *buf, const ssize_t buf_len)
     {
         sel = -1;
     }
-    g_pager->selected_link_index = sel;
+    g_pager->link_index = sel;
 
     // Use this label to skip digit input and parsing
 no_digit:

@@ -40,7 +40,9 @@ tui_input_prompt_begin(
     if (prompt)
     {
         // Print the prompt
-        g_in->prompt_len = prompt_len ? prompt_len : strlen(prompt);
+        g_in->prompt_len = min(
+            prompt_len > 0 ? prompt_len : strlen(prompt),
+            TUI_INPUT_PROMPT_MAX);
         strncpy(g_in->prompt, prompt, g_in->prompt_len + 1);
         tui_say(g_in->prompt);
     }
@@ -55,7 +57,9 @@ tui_input_prompt_begin(
         // Apply default buffer if given
         g_in->buffer_len = strlen(default_buffer);
         g_in->caret = g_in->buffer_len;
-        strncpy(g_in->buffer, default_buffer, TUI_INPUT_BUFFER_MAX);
+        strncpy(g_in->buffer,
+            default_buffer,
+            TUI_INPUT_BUFFER_MAX);
 
         // Print the buffer
         tui_say(default_buffer);
@@ -238,6 +242,31 @@ tui_input_prompt_yesno(const char *buf, ssize_t buf_len)
 
     // Doesn't get much simpler than this
     if (*buf == 'y' || *buf == 'Y') if (g_in->cb_complete) g_in->cb_complete();
+
+    return TUI_OK;
+}
+
+/*
+ * Input prompt for yes/no/cancel question inputs.
+ */
+enum tui_status
+tui_input_prompt_yesnocancel(const char *buf, ssize_t buf_len)
+{
+    g_in->buffer[0] = '\0';
+    g_in->buffer_len = 0;
+
+    tui_status_clear();
+    tui_input_prompt_end(g_in->mode);
+
+    bool yes = *buf == 'y' || *buf == 'Y',
+         no  = *buf == 'n' || *buf == 'N';
+
+    if (yes || no)
+    {
+        // Set the "parameter" in the input state itself, then run callback
+        g_in->param_yesno = yes;
+        g_in->cb_complete();
+    }
 
     return TUI_OK;
 }

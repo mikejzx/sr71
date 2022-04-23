@@ -14,6 +14,7 @@ gopher_deinit(void)
 int
 gopher_request(struct uri *uri)
 {
+    int ret_status = -1;
     struct gopher *const ph = &g_state->ph;
 
     if (!uri ||
@@ -63,6 +64,8 @@ gopher_request(struct uri *uri)
     }
     g_recv->size = recv_bytes;
 
+    ret_status = 0;
+
     // Get MIME type
     mime_parse(
         &g_recv->mime,
@@ -72,5 +75,5 @@ fail:
     close(ph->sock);
     ph->sock = 0;
 
-    return 0;
+    return ret_status;
 }

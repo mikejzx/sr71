@@ -117,4 +117,11 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 /* Set to 0 to disable quit confirmation message */
 #define TUI_QUIT_CONFIRMATION 1
 
+/*
+ * If 0, then a prompt is displayed when pressing 'F' to toggle a favourite,
+ * the prompt askes whether to add/delete the favourite
+ * If 1, then toggling as a favourite occurs instantly on pressing 'F'
+ */
+#define TUI_FAVOURITE_TOGGLE 0
+
 #endif

@@ -93,7 +93,7 @@ struct pager_state
     struct pager_link *links;
     int link_count;
     int link_capacity;
-    int selected_link_index, selected_link_index_prev;
+    int link_index, link_index_prev;
 
     // Pager margins
     struct margin
@@ -129,5 +129,13 @@ void pager_update_page(int, int);
 void pager_select_first_link_visible(void);
 void pager_select_last_link_visible(void);
 void pager_check_link_capacity(void);
+
+/* Was getting sick of typing this check over and over again ... */
+static inline bool
+pager_has_link(void)
+{
+    return g_pager->link_index >= 0 &&
+        g_pager->link_index < g_pager->link_count;
+}
 
 #endif
