@@ -37,6 +37,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 #define STATUS_LINE_FANCY_URI_FORMAT 1
 
 #define LIST_BULLET_CHAR "\u2022 "
+#define LIST_BULLET_CHAR_LEN strlen(LIST_BULLET_CHAR)
 #define BLOCKQUOTE_PREFIX "> "
 
 /* Offsets from left margin */
@@ -122,6 +123,6 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
  * the prompt askes whether to add/delete the favourite
  * If 1, then toggling as a favourite occurs instantly on pressing 'F'
  */
-#define TUI_FAVOURITE_TOGGLE 0
+#define TUI_FAVOURITE_TOGGLE 1
 
 #endif

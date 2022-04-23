@@ -571,7 +571,8 @@ typeset_gemtext(
             // Wrapped list lines get nicer indentation
             gemtext.indent = GEMTEXT_INDENT_LIST;
             gemtext.indent_canon = 0;
-            gemtext.hang = strlen(LIST_BULLET_CHAR) - 2;
+            gemtext.hang =
+                utf8_width(LIST_BULLET_CHAR, LIST_BULLET_CHAR_LEN);
 
             // Skip over the asterisk char
             gemtext.raw_bytes_skip = 2;
