@@ -385,8 +385,11 @@ tui_favourite_set(void)
         }
         else
         {
-            favourites_push_uri(u);
-            tui_status_say("\x1b[32madded page to favourites\x1b[0m");
+            tui_input_prompt_begin(
+                TUI_MODE_INPUT,
+                "enter title for favourite: ", 0,
+                NULL,
+                tui_favourite_push);
         }
     }
     else if (n)
@@ -411,8 +414,11 @@ tui_favourite_toggle(void)
     }
     else
     {
-        favourites_push_uri(u);
-        tui_status_say("\x1b[32madded page to favourites\x1b[0m");
+        tui_input_prompt_begin(
+            TUI_MODE_INPUT,
+            "enter title for favourite: ", 0,
+            NULL,
+            tui_favourite_push);
     }
 }
 
@@ -437,6 +443,39 @@ tui_favourite_delete_selected(void)
     tui_status_say("page unfavourited");
 }
 
+/* Favourites page only: update the title of a page */
+void
+tui_favourite_title_edited(void)
+{
+    if (!pager_has_link()) return;
+
+    struct fav_node *n =
+        favourites_find(&g_pager->links[g_pager->link_index].uri);
+    if (!n) return;
+
+    favourites_update_title(n, g_in->buffer, g_in->buffer_len);
+
+    // Update the favourites page that we are guaranteed to be on
+    struct uri uri_to = uri_parse(
+        URI_INTERNAL_FAVOURITES,
+        strlen(URI_INTERNAL_FAVOURITES));
+    tui_go_to_uri(&uri_to, false, true);
+
+    tui_status_begin();
+    tui_printf("page title changed to '%s'", g_in->buffer);
+    tui_status_end();
+}
+
+void
+tui_favourite_push(void)
+{
+    const struct uri *u = &g_state->uri;
+    favourites_push_uri(u, g_in->buffer, g_in->buffer_len);
+    tui_status_begin();
+    tui_printf("\x1b[32madded to favourites: '%s'\x1b[0m", g_in->buffer);
+    tui_status_end();
+}
+
 /* Goto a site */
 int
 tui_go_to_uri(
@@ -451,9 +490,19 @@ tui_go_to_uri(
         uri.protocol == PROTOCOL_FINGER)
     {
         // Show error message
-        tui_status_say("Unsupported protocol");
+        tui_status_say("Unsupported protocol.");
         return -1;
     }
+
+#if !PROTOCOL_SUPPORT_GOPHER
+    if (uri.protocol == PROTOCOL_GOPHER)
+    {
+        tui_status_say(
+            "Unsupported protocol.  "
+            "Rebuild " PROGRAM_NAME " with Gopher support to view this link.");
+        return -1;
+    }
+#endif
 
     // Assume Gemini if no scheme given
     if (uri.protocol == PROTOCOL_NONE)

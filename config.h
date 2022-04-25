@@ -112,6 +112,11 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 #define TYPESET_LB_PENALTY_CONSECUTIVE_HYPHENS 150
 
 /*
+ * Protocols
+ */
+#define PROTOCOL_SUPPORT_GOPHER 1
+
+/*
  * Misc.
  */
 

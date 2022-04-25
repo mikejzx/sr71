@@ -317,6 +317,7 @@ tui_input_common(const char *buf, const ssize_t buf_len)
 
     /* Keybinds specific to Favourites page */
     case 'D':
+    case 'E':
     {
         // Make sure we are on favourites page
         if (!favourites_is_viewing()) return TUI_OK;
@@ -324,12 +325,25 @@ tui_input_common(const char *buf, const ssize_t buf_len)
         // Need a favourite to be selected
         if (!pager_has_link()) return TUI_OK;
 
-        tui_input_prompt_begin(
-            TUI_MODE_YES_NO,
-            "unfavourite the selected link? (Y/n)", 0,
-            NULL,
-            tui_favourite_delete_selected);
-
+        switch(c)
+        {
+        /* Unfavourite page */
+        case 'D':
+            tui_input_prompt_begin(
+                TUI_MODE_YES_NO,
+                "unfavourite the selected link? (Y/n)", 0,
+                NULL,
+                tui_favourite_delete_selected);
+            break;
+        /* Edit favourite title */
+        case 'E':
+            tui_input_prompt_begin(
+                TUI_MODE_INPUT,
+                "change favourite title: ", 0,
+                NULL,
+                tui_favourite_title_edited);
+            break;
+        }
     } return TUI_OK;
 
     default: break;

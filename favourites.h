@@ -42,8 +42,11 @@ int favourites_display(void);
 
 struct fav_node *favourites_find(const struct uri *);
 void favourites_push(struct fav_node *);
-struct fav_node *favourites_push_uri(const struct uri *);
+struct fav_node *favourites_push_uri(
+    const struct uri *restrict, const char *restrict, int);
 void favourites_delete(struct fav_node *);
+void favourites_update_title(
+    struct fav_node *restrict, const char *restrict, int);
 
 static inline bool
 favourites_has(const struct uri *uri)

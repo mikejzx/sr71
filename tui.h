@@ -67,6 +67,8 @@ void tui_refresh_page(void);
 void tui_favourite_set(void);
 void tui_favourite_toggle(void);
 void tui_favourite_delete_selected(void);
+void tui_favourite_title_edited(void);
+void tui_favourite_push(void);
 
 /* Move cursor */
 #define tui_cursor_move(x, y) \

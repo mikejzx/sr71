@@ -14,6 +14,9 @@ gopher_deinit(void)
 int
 gopher_request(struct uri *uri)
 {
+#if !PROTOCOL_SUPPORT_GOPHER
+    return -1;
+#else
     int ret_status = -1;
     struct gopher *const ph = &g_state->ph;
 
@@ -76,4 +79,6 @@ fail:
     ph->sock = 0;
 
     return ret_status;
+
+#endif // PROTOCOL_SUPPORT_GOPHER
 }

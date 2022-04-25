@@ -176,7 +176,10 @@ favourites_push(struct fav_node *n)
 }
 
 struct fav_node *
-favourites_push_uri(const struct uri *u)
+favourites_push_uri(
+    const struct uri *restrict u,
+    const char *restrict title,
+    int title_len)
 {
     struct fav_node *n = malloc(sizeof(struct fav_node));
 
@@ -184,9 +187,14 @@ favourites_push_uri(const struct uri *u)
     n->uri = malloc(URI_STRING_MAX);
     uri_str(u, n->uri, URI_STRING_MAX, 0);
 
-    // TODO: title input somehow
-    //strncpy(n->title, "New favourite", FAVOURITE_TITLE_MAX);
-    *n->title = '\0';
+    if (title_len)
+    {
+        strncpy(n->title, title, min(title_len + 1, FAVOURITE_TITLE_MAX));
+    }
+    else
+    {
+        *n->title = '\0';
+    }
 
     favourites_push(n);
     return n;
@@ -205,5 +213,17 @@ favourites_delete(struct fav_node *n)
     free(n->uri);
     free(n);
 
+    s_favs_modified = true;
+}
+
+void
+favourites_update_title(
+    struct fav_node *restrict n,
+    const char *restrict title,
+    int title_len)
+{
+    strncpy(n->title,
+        title,
+        min(title_len + 1, FAVOURITE_TITLE_MAX));
     s_favs_modified = true;
 }
