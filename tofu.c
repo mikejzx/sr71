@@ -28,7 +28,8 @@ tofu_init(void)
 
     size_t len_tmp;
     ssize_t len;
-    for (char *line = NULL; (len = getline(&line, &len_tmp, fp)) != -1;)
+    char *line;
+    for (line = NULL; (len = getline(&line, &len_tmp, fp)) != -1;)
     {
         ssize_t delim;
         for (delim = 0; delim < len && line[delim] != ' '; ++delim);
@@ -40,6 +41,7 @@ tofu_init(void)
         }
 
         struct tofu_entry *entry = &s_tofu.entries[s_tofu.entry_count++];
+        memset(entry, 0, sizeof(struct tofu_entry));
         strncpy(entry->hostname, line, min(delim, URI_HOSTNAME_MAX));
 
         entry->fingerprint_len = 0;
@@ -52,6 +54,7 @@ tofu_init(void)
             ++entry->fingerprint_len;
         }
     }
+    if (line) free(line);
 
     fclose(fp);
 }
@@ -106,7 +109,7 @@ tofu_verify_or_add(char *hostname, X509 *cert)
     // Iterate over certificates in our database
     for (int i = 0; i < s_tofu.entry_count; ++i)
     {
-        struct tofu_entry *entry = &s_tofu.entries[i];
+        const struct tofu_entry *entry = &s_tofu.entries[i];
 
         if (strncmp(entry->hostname, hostname, URI_HOSTNAME_MAX) == 0)
         {
@@ -134,7 +137,9 @@ tofu_verify_or_add(char *hostname, X509 *cert)
     }
 
     struct tofu_entry *ent = &s_tofu.entries[s_tofu.entry_count++];
+    *ent->hostname = '\0';
     strncpy(ent->hostname, hostname, URI_HOSTNAME_MAX);
+    *ent->fingerprint = '\0';
     memcpy(ent->fingerprint, fingerprint, fingerprint_len);
     ent->fingerprint_len = fingerprint_len;
 

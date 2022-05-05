@@ -39,7 +39,8 @@ favourites_init(void)
     ssize_t len;
     size_t len_tmp;
     struct fav_node *n;
-    for (char *line = NULL; (len = getline(&line, &len_tmp, fp)) != -1;)
+    char *line;
+    for (line = NULL; (len = getline(&line, &len_tmp, fp)) != -1;)
     {
         // First column (to whitespace) is the URI itself
         // Everything after that is the favourite name
@@ -49,10 +50,17 @@ favourites_init(void)
         const char *title_end = title_start + strcspn(title_start, "\n");
 
         // Create the node
-        n = malloc(sizeof(struct fav_node));
-        strncpy(n->title,
-            title_start,
-            min(FAVOURITE_TITLE_MAX, title_end - title_start));
+        n = calloc(1, sizeof(struct fav_node));
+        if ((int)(title_end - title_start) > 0)
+        {
+            strncpy(n->title,
+                title_start,
+                min(FAVOURITE_TITLE_MAX, title_end - title_start));
+        }
+        else
+        {
+            *n->title = '\0';
+        }
         int uri_len = (int)(uri_end - uri_start);
         n->uri = malloc(uri_len + 1);
         strncpy(n->uri, uri_start, uri_len);
@@ -61,8 +69,11 @@ favourites_init(void)
         // Push the node
         favourites_push(n);
     }
+    if (line) free(line);
 
     s_favs_modified = false;
+
+    fclose(fp);
 }
 
 void
@@ -132,6 +143,7 @@ favourites_display(void)
             g_recv->size += bytes;
         }
     }
+    free(buf_tmp);
 
     mime_parse(&g_recv->mime, MIME_GEMTEXT, strlen(MIME_GEMTEXT));
     tui_status_clear();

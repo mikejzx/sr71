@@ -79,9 +79,6 @@ struct kp_node
     // Paragraph width sum
     int w;
 
-    // Width of the line itself
-    int line_w;
-
     // Pointer to the *best previous node* in the list
     struct kp_node *prev;
 
@@ -115,7 +112,7 @@ static int s_bp_cur;
 static bool s_bp_reversed = false;
 
 // Knuth-Plass
-static struct kp_ll s_kp_active;
+static struct kp_ll s_kp_active, s_kp_inactive;
 static int s_kp_width_sum;
 static void knuth_plass(const struct lb_item *, int);
 
@@ -174,6 +171,7 @@ line_break_init(void)
     s_bp = malloc(s_bpcap * sizeof(struct lb_breakpoint));
 
     memset(&s_kp_active, 0, sizeof(struct kp_ll));
+    memset(&s_kp_inactive, 0, sizeof(struct kp_ll));
 }
 
 void
@@ -629,6 +627,9 @@ line_break_compute_knuth_plass(void)
         s_kp_active.head = s_kp_active.tail = n;
     }
 
+    // Reset inactive list
+    s_kp_inactive.head = s_kp_inactive.tail = NULL;
+
     for (int i = 0; i < s_icount; ++i)
     {
         const struct lb_item *item = &s_items[i];
@@ -653,12 +654,13 @@ line_break_compute_knuth_plass(void)
         }
     }
 
-    if (!s_kp_active.head) return;
+    struct kp_node *n;
+    if (!s_kp_active.head) goto no_head;
 
     // Find ideal breakpoint
     int best_score = LB_INFINITY;
     struct kp_node *best = NULL;
-    for (struct kp_node *n = s_kp_active.head; n; n = n->link_n)
+    for (n = s_kp_active.head; n; n = n->link_n)
     {
         if (n->score >= best_score) continue;
 
@@ -673,7 +675,7 @@ line_break_compute_knuth_plass(void)
     }
 
     // Free the linked list
-    for (struct kp_node *n = s_kp_active.head; n != NULL;)
+    for (n = s_kp_active.head; n;)
     {
         struct kp_node *tmp = n->link_n;
         free(n);
@@ -681,6 +683,15 @@ line_break_compute_knuth_plass(void)
     }
 
     s_bp_cur = 1;
+
+    // Free the inactive linked list
+no_head:
+    for (n = s_kp_inactive.head; n;)
+    {
+        struct kp_node *tmp = n->link_n;
+        free(n);
+        n = tmp;
+    }
 }
 
 static void
@@ -767,8 +778,21 @@ knuth_plass(const struct lb_item *item, int item_index)
                 if (active->link_n) active->link_n->link_p = active->link_p;
                 else s_kp_active.tail = active->link_p;
 
-                //free(active);
-                //active = NULL;
+                // Push the node to the linked list of the "unlinked" nodes so
+                // we can free it later.
+                if (!s_kp_inactive.head)
+                {
+                    active->link_p = NULL;
+                    active->link_n = NULL;
+                    s_kp_inactive.head = s_kp_inactive.tail = active;
+                }
+                else
+                {
+                    active->link_p = s_kp_inactive.tail;
+                    active->link_n = NULL;
+                    s_kp_inactive.tail->link_n = active;
+                    s_kp_inactive.tail = active;
+                }
             }
 
             active = next;

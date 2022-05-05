@@ -266,7 +266,8 @@ cache_deinit(void)
 
     size_t tmp;
     ssize_t len;
-    for (char *line = NULL; (len = getline(&line, &tmp, fp_meta)) != -1;)
+    char *line;
+    for (line = NULL; (len = getline(&line, &tmp, fp_meta)) != -1;)
     {
         if (len < 1) continue;
         size_t uri_len = min(strcspn(line, "\t\n"), len - 1);
@@ -289,6 +290,7 @@ cache_deinit(void)
 
     skip:;
     }
+    if (line) free(line);
 
     fclose(fp_meta);
 no_meta_file:
@@ -393,7 +395,8 @@ cache_find(
     size_t tmp;
     ssize_t n_bytes;
     bool read = false;
-    for (char *line = NULL; (n_bytes = getline(&line, &tmp, fp)) != -1;)
+    char *line;
+    for (line = NULL; (n_bytes = getline(&line, &tmp, fp)) != -1;)
     {
         if (n_bytes < 1) continue;
         size_t uri_len = min(strcspn(line, "\t\n"), n_bytes - 1);
@@ -462,6 +465,7 @@ cache_find(
         read = true;
         break;
     }
+    if (line) free(line);
 
     fclose(fp);
 

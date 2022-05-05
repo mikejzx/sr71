@@ -175,6 +175,7 @@ program_exited(void)
     gopher_deinit();
 
     tui_cleanup();
+    pager_deinit();
 
     favourites_deinit();
     history_deinit();

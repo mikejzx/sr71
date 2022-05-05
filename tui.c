@@ -76,7 +76,7 @@ int
 tui_update(void)
 {
     ssize_t read_n = 0;
-    for (char buf[16];
+    for (char buf[16] = { 0 };
         !g_tui->did_quit;
         read_n = read(STDOUT_FILENO, &buf, sizeof(buf)))
     {
@@ -159,7 +159,7 @@ void
 tui_go_from_input(void)
 {
     // Parse the URI.
-    struct uri uri = uri_parse(g_in->buffer, g_in->buffer_len + 1);
+    struct uri uri = uri_parse(g_in->buffer, g_in->buffer_len);
 
     // We need to make sure that there is a protocol or else the URI parse
     // will cause problems

@@ -52,28 +52,6 @@ typesetter_reinit(struct typesetter *t)
     }
 
     // Set line points in raw buffer
-#if 0
-    int l = 0, l_prev = -1;
-    for (int i = 0; i < g_recv->size; ++i)
-    {
-        if (rawbuf[i] != '\n' && i != g_recv->size - 1) continue;
-
-        t->raw_lines[l].s = &rawbuf[l_prev + 1];
-        t->raw_lines[l].bytes = i - l_prev;
-
-        // Strip carriage returns, linefeeds, and spaces
-        for (const char *j = &rawbuf[i];
-            j >= t->raw_lines[l].s && strchr("\r\n \t", *j) != NULL;
-            --j, --t->raw_lines[l].bytes);
-
-        t->raw_lines[l].len = utf8_width(
-            &rawbuf[l_prev + 1],
-            t->raw_lines[l].bytes);
-
-        l_prev = i;
-        ++l;
-    }
-#else
     const char *c, *end = rawbuf + g_recv->size, *start = rawbuf;
     struct pager_buffer_line *line = t->raw_lines;
     for (c = start; c < end; ++c)
@@ -92,7 +70,6 @@ typesetter_reinit(struct typesetter *t)
         start = c + 1;
         ++line;
     }
-#endif
 }
 
 /* Prepare buffers, etc. for typesetting */

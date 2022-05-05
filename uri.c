@@ -2,8 +2,14 @@
 #include "uri.h"
 
 struct uri
-uri_parse(const char *uri, int uri_len)
+uri_parse(const char *uri_unsafe, int uri_len)
 {
+    // Quick fix for strcspn reading past uri_len...
+    // Perhaps we should write a strncspn function or something
+    char *uri = alloca(uri_len + 1);
+    strncpy(uri, uri_unsafe, uri_len);
+    uri[uri_len] = '\0';
+
     struct uri result;
     memset(&result, 0, sizeof(struct uri));
     if (uri_len <= 0) return result;

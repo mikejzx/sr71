@@ -117,6 +117,7 @@ struct pager_state
 extern struct pager_state *g_pager;
 
 void pager_init(void);
+void pager_deinit(void);
 void pager_load_buffer(struct pager_buffer *);
 void pager_scroll(int);
 void pager_scroll_topbot(int);

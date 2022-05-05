@@ -36,7 +36,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
 // hostname in a brighter colour, and will highlight gopher item type.
 #define STATUS_LINE_FANCY_URI_FORMAT 1
 
-#define LIST_BULLET_CHAR "\u2022 "
+#define LIST_BULLET_CHAR "* " //"\u2022 "
 #define LIST_BULLET_CHAR_LEN strlen(LIST_BULLET_CHAR)
 #define BLOCKQUOTE_PREFIX "> "
 

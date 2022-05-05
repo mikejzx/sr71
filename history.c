@@ -222,6 +222,7 @@ history_log_display(void)
         g_recv->size += bytes;
     }
 
+    free(buf_tmp);
     fclose(fp);
 
     // Set MIME type to gemtext
