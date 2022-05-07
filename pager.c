@@ -289,11 +289,13 @@ pager_paint(bool full)
                 if (line->s >= link->buffer_loc &&
                     line->s < link->buffer_loc + link->buffer_loc_len)
                 {
-                    // Move cursor to correct place and fill margin and indent
+                    // Move cursor to end of left margin, and fill the indent
                     if (!moved)
                     {
-                        tui_cursor_move(0, i + 1 + PAGER_TOP);
-                        tui_printf("%*s", g_pager->margin.l + line->indent, "");
+                        tui_cursor_move(
+                            g_pager->margin.l,
+                            i + 1 + PAGER_TOP);
+                        tui_printf("%*s", line->indent, "");
                         moved = true;
                     }
                     will_print = true;
@@ -313,11 +315,13 @@ pager_paint(bool full)
             // Don't print anything
             if (!will_print) continue;
 
-            // Move cursor to correct place and fill margin
+            // Move cursor to end of left margin, and fill the indent
             if (!moved)
             {
-                tui_cursor_move(0, i + 1 + PAGER_TOP);
-                tui_printf("%*s", g_pager->margin.l + line->indent, "");
+                tui_cursor_move(
+                    g_pager->margin.l,
+                    i + 1 + PAGER_TOP);
+                tui_printf("%*s", line->indent, "");
                 moved = true;
             }
 
@@ -339,9 +343,8 @@ pager_paint(bool full)
         {
             if (!full) continue;
 
-            // Move cursor to correct place and fill margin
-            tui_cursor_move(0, i + 1 + PAGER_TOP);
-            tui_printf("%*s", g_pager->margin.l, "");
+            // Move cursor to end of left margin
+            tui_cursor_move(g_pager->margin.l, i + 1 + PAGER_TOP);
 
         #if CLEAR_VI_STYLE
             // Because vi
