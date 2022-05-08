@@ -7,6 +7,8 @@
 
 #define LB_INFINITY (SHRT_MAX + 1)
 
+#define HANG_PUNCT_CHARS ".,!;?)'\":"
+
 // Represents a single "item" in a string of text.  All algorithms are based
 // around the fundamental 'box-glue-penalty' model as used in Knuth-Plass
 // We try to pack this to 16 bytes to slightly reduce some memory usage
@@ -224,11 +226,12 @@ line_break_prepare(const struct lb_prepare_args *args)
         int hyphen_count = 0;
         for (; c[hyphen_count] == '-'; ++hyphen_count);
 
-        // End of word (minus punctuation)
+        // End of word (minus hanging punctuation punctuation)
         for (c_word = c - 1;
-            c_word >= c_last && (isspace(*c_word) || ispunct(*c_word));
+            c_word >= c_last && (strchr(HANG_PUNCT_CHARS, *c_word) != NULL);
             --c_word);
         ++c_word;
+        if (c_word < c - 1) c_word = c - 1;
 
         // Find the hyphenation points in the word, and add them as penalty
         // items between the boxes
@@ -269,7 +272,7 @@ line_break_prepare(const struct lb_prepare_args *args)
             }
         };
 
-        // Add punctuation in it's own box
+        // Add right-side hanging punctuation in it's own zero-width box
         if (c_word < c)
         {
             ensure_item_buffer_incr();
@@ -359,7 +362,8 @@ line_break_prepare(const struct lb_prepare_args *args)
                     end_of_sentence ? 2 :
             #endif
                     1 +
-                    // Add additional space into glue for hanging punctuation
+                    // Add additional space into glue for the right-side
+                    // hanging punctuation
                     (c - c_word),
             };
 
