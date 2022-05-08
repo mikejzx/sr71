@@ -4,10 +4,6 @@
 #include "uri.h"
 #include "mime.h"
 
-#define CACHE_PATH PROGRAM_DATA_DIR "/cache"
-#define CACHE_PATH_GEMINI CACHE_PATH "/gemini"
-#define CACHE_PATH_GOPHER CACHE_PATH "/gopher"
-
 /*
  * cache.h
  *
@@ -35,6 +31,12 @@
  *   type, etc.)
  * + Perhaps "versions" of cached items can be kept?
  * + May possibly look into compression of local cache? (lz4 or gzip should do)
+ * + We may also consider caching some status codes, namely INPUT ones, this
+ *   will allow users to run search queries basically immediately.
+ * + URIs with queries are not cached at all at the moment due mainly to
+ *   difficulties in storing the cached items, but also as it would seem logical
+ *   to get new pages after input anyway.  We may consider caching these pages
+ *   though only keeping them *in-memory* and discarding them later.
  */
 
 #define CACHE_ITEM_CAPACITY_INITIAL (128)

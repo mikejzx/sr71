@@ -1,8 +1,6 @@
 #ifndef FAVOURITES_H
 #define FAVOURITES_H
 
-#define FAVOURITES_PATH PROGRAM_DATA_DIR "/favourites"
-
 #define FAVOURITE_TITLE_MAX (32)
 
 #include "state.h"

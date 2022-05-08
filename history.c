@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "cache.h"
 #include "history.h"
+#include "paths.h"
 #include "state.h"
 #include "uri.h"
 
@@ -72,7 +73,7 @@ history_push(struct uri *uri)
     // Don't log internal pages
     if (uri->protocol == PROTOCOL_INTERNAL) return;
 
-    FILE *fp = fopen(HISTORY_LOG_PATH, "a");
+    FILE *fp = fopen(path_get(PATH_ID_HISTORY_LOG), "a");
     if (!fp)
     {
         tui_status_say("error: failed to write to history log file");
@@ -153,7 +154,7 @@ history_log_display(void)
 #if HISTORY_LOG_ENABLED
     tui_status_say("Reading history file ...");
 
-    FILE *fp = fopen(HISTORY_LOG_PATH, "rb");
+    FILE *fp = fopen(path_get(PATH_ID_HISTORY_LOG), "rb");
     if (!fp)
     {
         tui_status_say("No history file yet");

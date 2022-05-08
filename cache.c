@@ -1,6 +1,7 @@
 #include "pch.h"
-#include "state.h"
 #include "cache.h"
+#include "paths.h"
+#include "state.h"
 #include "tui.h"
 
 #define DIR_PERMS (S_IRWXU | S_IRWXG)
@@ -8,11 +9,6 @@
 static struct cache s_cache;
 
 #if CACHE_USE_DISK
-static const char
-    *PATH_META = CACHE_PATH "/meta.dir",
-    // Can't put on /tmp or else we get EXDEV errno
-    *PATH_META_TMP = CACHE_PATH "/meta.dir.tmp",
-    *PATH_META_BAK = CACHE_PATH "/meta.dir.bak";
 enum
 cache_meta_info_id
 {
@@ -31,25 +27,25 @@ cache_create_path(const char *p) { return mkdir(p, DIR_PERMS); }
 static int
 cache_create_gem(void)
 {
-    if (access(CACHE_PATH_GEMINI, F_OK) == 0) return 0;
-    return cache_create_path(CACHE_PATH_GEMINI);
+    if (access(path_get(PATH_ID_CACHE_GEMINI), F_OK) == 0) return 0;
+    return cache_create_path(path_get(PATH_ID_CACHE_GEMINI));
 }
 
 static int
 cache_create_ph(void)
 {
-    if (access(CACHE_PATH_GOPHER, F_OK) == 0) return 0;
-    return cache_create_path(CACHE_PATH_GOPHER);
+    if (access(path_get(PATH_ID_CACHE_GOPHER), F_OK) == 0) return 0;
+    return cache_create_path(path_get(PATH_ID_CACHE_GOPHER));
 }
 
-static const char *CACHE_PATHS[PROTOCOL_COUNT] =
+static const enum path_id CACHE_PATH_IDS[PROTOCOL_COUNT] =
 {
-    [PROTOCOL_UNKNOWN] = NULL,
-    [PROTOCOL_GEMINI]  = CACHE_PATH_GEMINI,
-    [PROTOCOL_GOPHER]  = CACHE_PATH_GOPHER,
-    [PROTOCOL_FINGER]  = NULL,
-    [PROTOCOL_FILE]    = NULL,
-    [PROTOCOL_MAILTO]  = NULL,
+    [PROTOCOL_UNKNOWN] = PATH_ID_UNKNOWN,
+    [PROTOCOL_GEMINI]  = PATH_ID_CACHE_GEMINI,
+    [PROTOCOL_GOPHER]  = PATH_ID_CACHE_GOPHER,
+    [PROTOCOL_FINGER]  = PATH_ID_UNKNOWN,
+    [PROTOCOL_FILE]    = PATH_ID_UNKNOWN,
+    [PROTOCOL_MAILTO]  = PATH_ID_UNKNOWN,
 };
 
 /* Generate filepath for on-disk cache item */
@@ -57,11 +53,25 @@ static void
 cache_gen_filepath(
     const struct uri *restrict const uri,
     char *restrict path,
-    size_t path_size)
+    size_t path_size,
+    bool with_prefix)
 {
-    const char *cachepath = CACHE_PATHS[uri->protocol];
-    size_t len = snprintf(path, path_size,
-        "%s/%s%s", cachepath, uri->hostname, uri->path);
+    size_t len;
+    if (with_prefix)
+    {
+        len = snprintf(path, path_size,
+            "%s/%s%s",
+            path_get(CACHE_PATH_IDS[uri->protocol]),
+            uri->hostname,
+            uri->path);
+    }
+    else
+    {
+        len = snprintf(path, path_size,
+            "%s%s",
+            uri->hostname,
+            uri->path);
+    }
 
     // If the resource is part of a directory, we need to manually add a
     // filename
@@ -71,10 +81,28 @@ cache_gen_filepath(
     }
     else
     {
+        char *canon_path;
+        char path_on_disk[FILENAME_MAX];
+
+        if (!with_prefix)
+        {
+            // Generate the path with the prefix in it
+            snprintf(path_on_disk, sizeof(path_on_disk),
+                "%s/%s",
+                path_get(CACHE_PATH_IDS[uri->protocol]),
+                path);
+            canon_path = path_on_disk;
+        }
+        else
+        {
+            // Already got prefix in the path
+            canon_path = path;
+        }
+
         // Check if this resource name is already used by a directory; if so
         // then this needs to become an 'index' file.
         static struct stat path_stat;
-        if (stat(path, &path_stat) < 0)
+        if (stat(canon_path, &path_stat) < 0)
         {
             // Path doesn't exist; all fine
             return;
@@ -121,8 +149,8 @@ cache_file_to_dir(const char *fpath)
     }
 
     // Generate a path to temporarily move the file
-    char path_tmp[] = CACHE_PATH "/tmp.XXXXXX",
-         path_index[FILENAME_MAX];
+    char path_index[FILENAME_MAX], path_tmp[FILENAME_MAX];
+    strncpy(path_tmp, path_get(PATH_ID_CACHE_TMP), FILENAME_MAX);
     if (mkstemp(path_tmp) == -1) return false;
 
     // Rename file to a temporary file name
@@ -154,11 +182,14 @@ cache_init(void)
 
     // If cache directory on disk doesn't exist, create it
 #if CACHE_USE_DISK
-    if (access(CACHE_PATH, F_OK) != 0 &&
+    if (access(path_get(PATH_ID_CACHE_ROOT), F_OK) != 0 &&
         // Create with RW for owner and group
-        mkdir(CACHE_PATH, DIR_PERMS) != 0)
+        mkdir(path_get(PATH_ID_CACHE_ROOT), DIR_PERMS) != 0)
     {
-        tui_status_say("cache: failed to make cache directory " CACHE_PATH);
+        tui_status_begin();
+        tui_printf("cache: failed to make cache directory %s",
+            path_get(PATH_ID_CACHE_ROOT));
+        tui_status_end();
         return -1;
     }
 
@@ -182,7 +213,8 @@ cache_deinit(void)
     char path[FILENAME_MAX];
 
     /* Open the temporary metadata file for writing */
-    if (!(fp_meta_tmp = fopen(PATH_META_TMP, "w"))) goto abort_flush;
+    if (!(fp_meta_tmp = fopen(path_get(PATH_ID_CACHE_META_TMP), "w")))
+        goto abort_flush;
 
     tui_status_say("Flushing cache to disk ...");
 
@@ -194,14 +226,25 @@ cache_deinit(void)
     {
         const struct cached_item *const item = &s_cache.items[i];
 
-        // Make all the directories as needed
-        cache_gen_filepath(&item->uri, path, sizeof(path));
-        for (char *x = path; *x; ++x)
+        /* Make all the directories as needed */
+        // So here, 'path' represents the entire path on-disk, 'path_rel' is
+        // the path from the start of the URI entry itself, which we iterate
+        // over to find directories to create.
+        snprintf(path, sizeof(path),
+            "%s/", path_get(CACHE_PATH_IDS[item->uri.protocol]));
+        char *path_rel = path + strlen(path);
+        cache_gen_filepath(&item->uri,
+            path_rel, sizeof(path) - (path_rel - path), false);
+
+        for (char *x = path_rel; *x; ++x)
         {
             if (*x != '/') continue;
+
+            // Found a slash; put a null-terminator so we can easily work this
+            // directory.
             *x = '\0';
 
-            // Check if the path exists
+            // Check if the directory exists
             if (access(path, F_OK) != 0)
             {
                 // Directory doesn't exist; so create it
@@ -213,15 +256,16 @@ cache_deinit(void)
             }
             else
             {
-                // The path exists, so we ensure it is indeed a *directory* and
+                // The path exists, now ensure it is indeed a *directory* and
                 // not an already-stored file
                 if (!cache_file_to_dir(path))
                 {
-                    // Give up
+                    // Give up if converting it to a directory failed
                     goto fail;
                 }
             }
 
+            // Fix the string so we can move to next directory
             *x = '/';
         }
 
@@ -256,8 +300,8 @@ cache_deinit(void)
     // Now open the real meta file for reading, and read any URIs that haven't
     // already been written to the temporary one
     bool did_read_meta;
-    if (access(PATH_META, F_OK) != 0 ||
-        !(fp_meta = fopen(PATH_META, "r")))
+    if (access(path_get(PATH_ID_CACHE_META), F_OK) != 0 ||
+        !(fp_meta = fopen(path_get(PATH_ID_CACHE_META), "r")))
     {
         did_read_meta = false;
         goto no_meta_file;
@@ -300,15 +344,19 @@ no_meta_file:
 
     if (did_read_meta)
     {
-        remove(PATH_META_BAK);
+        remove(path_get(PATH_ID_CACHE_META_BAK));
         // Make backup of meta.dir
-        if (rename(PATH_META, PATH_META_BAK) != 0)
+        if (rename(
+            path_get(PATH_ID_CACHE_META),
+            path_get(PATH_ID_CACHE_META_BAK)) != 0)
         {
             goto abort_flush;
         }
     }
     // Make temp file the main one
-    if (rename(PATH_META_TMP, PATH_META) != 0)
+    if (rename(
+        path_get(PATH_ID_CACHE_META_TMP),
+        path_get(PATH_ID_CACHE_META)) != 0)
     {
         goto abort_flush;
     }
@@ -360,7 +408,7 @@ cache_find(
     FILE *fp;
 
     // Check if the file exists on the disk
-    cache_gen_filepath(uri, path, sizeof(path));
+    cache_gen_filepath(uri, path, sizeof(path), true);
     if (access(path, F_OK) != 0)
     {
         return false;
@@ -378,7 +426,7 @@ cache_find(
             URI_FLAGS_NO_QUERY_BIT);
 
     /* Read the metadata file */
-    if (!(fp = fopen(PATH_META, "r")))
+    if (!(fp = fopen(path_get(PATH_ID_CACHE_META), "r")))
     {
         return false;
     }

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "favourites.h"
+#include "paths.h"
 #include "state.h"
 #include "tui.h"
 #include "uri.h"
@@ -18,9 +19,9 @@ favourites_init(void)
     FILE *fp;
 
     // Create file if it doesn't exist
-    if (access(FAVOURITES_PATH, F_OK) != 0)
+    if (access(path_get(PATH_ID_FAVOURITES), F_OK) != 0)
     {
-        fp = fopen(FAVOURITES_PATH, "w");
+        fp = fopen(path_get(PATH_ID_FAVOURITES), "w");
         fclose(fp);
 
         // No favourites, leave the list empty
@@ -28,7 +29,7 @@ favourites_init(void)
     }
 
     // Open for reading
-    fp = fopen(FAVOURITES_PATH, "r");
+    fp = fopen(path_get(PATH_ID_FAVOURITES), "r");
     if (!fp)
     {
         tui_status_say("error: failed to read favourites file");
@@ -84,7 +85,7 @@ favourites_deinit(void)
      * */
     if (!s_favs_modified) goto cleanup;
 
-    FILE *fp = fopen(FAVOURITES_PATH, "w");
+    FILE *fp = fopen(path_get(PATH_ID_FAVOURITES), "w");
     if (!fp) goto cleanup;
 
     for (struct fav_node *n = s_head; n != NULL; n = n->link_n)

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "cache.h"
 #include "favourites.h"
+#include "paths.h"
 #include "sighandle.h"
 #include "state.h"
 #include "status_line.h"
@@ -20,6 +21,7 @@ main(int argc, char **argv)
 {
     setlocale(LC_ALL, "");
 
+    if (paths_init() < 0) return -1;
     utf8_init();
 
 #if 0
@@ -183,5 +185,6 @@ program_exited(void)
     free(g_recv->b);
     free(g_state);
 
+    paths_deinit();
     utf8_deinit();
 }

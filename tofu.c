@@ -1,11 +1,15 @@
 #include "pch.h"
+#include "paths.h"
 #include "tofu.h"
 #include "tui.h"
 
 static struct tofu s_tofu;
 
 static inline bool
-tofu_file_exists(void) { return access(TOFU_FILE_PATH, F_OK) == 0; }
+tofu_file_exists(void)
+{
+    return access(path_get(PATH_ID_TOFU), F_OK) == 0;
+}
 
 void
 tofu_init(void)
@@ -17,11 +21,12 @@ tofu_init(void)
     if (!tofu_file_exists()) { return; }
 
     // Read saved entries
-    FILE *fp = fopen(TOFU_FILE_PATH, "r");
+    FILE *fp = fopen(path_get(PATH_ID_TOFU), "r");
     if (!fp)
     {
         tui_status_begin();
-        tui_say("error: failed to open TOFU database '" TOFU_FILE_PATH "'");
+        tui_printf("error: failed to open TOFU database '%s'",
+            path_get(PATH_ID_TOFU));
         tui_status_end();
         return;
     }
@@ -63,11 +68,12 @@ void
 tofu_deinit(void)
 {
     // Update the TOFU database on disk
-    FILE *fp = fopen(TOFU_FILE_PATH, "w");
+    FILE *fp = fopen(path_get(PATH_ID_TOFU), "w");
     if (!fp)
     {
         tui_status_begin();
-        tui_say("error: failed to open TOFU database '" TOFU_FILE_PATH "'");
+        tui_printf("error: failed to open TOFU database '%s'",
+            path_get(PATH_ID_TOFU));
         tui_status_end();
         free(s_tofu.entries);
         return;

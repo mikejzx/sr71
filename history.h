@@ -5,8 +5,6 @@
 
 #define MAX_HISTORY_SIZE 64
 
-#define HISTORY_LOG_PATH PROGRAM_DATA_DIR "/history.log"
-
 /*
  * history.h
  *
