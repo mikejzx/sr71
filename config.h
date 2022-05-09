@@ -130,4 +130,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
  */
 #define TUI_FAVOURITE_TOGGLE 1
 
+/* Default 'Save as' location, e.g. your downloads directory */
+#define TUI_SAVE_DEFAULT_LOC NULL //"~/downloads/"
+
 #endif

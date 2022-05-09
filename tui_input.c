@@ -217,8 +217,8 @@ tui_input_common(const char *buf, const ssize_t buf_len)
     case 'S':
         tui_input_prompt_begin(
             TUI_MODE_INPUT,
-            "Save document as: ", 0,
-            NULL,
+            "Save document to: ", 0,
+            TUI_SAVE_DEFAULT_LOC,
             tui_save_to_file);
         break;
 

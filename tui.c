@@ -308,11 +308,30 @@ tui_search_start_reverse(void)
 void
 tui_save_to_file(void)
 {
-    FILE *fp = fopen(g_in->buffer, "w");
+    if (g_in->buffer_len <= 0) return;
+
+    // We allow expanding a tilde at the beginning for user home directory
+    char filename_buf[FILENAME_MAX], *filename;
+    if (*g_in->buffer == '~')
+    {
+        const char *home = getenv("HOME");
+        strncpy(filename_buf, home, sizeof(filename_buf));
+        strncat(filename_buf,
+            g_in->buffer + strlen("~"),
+            sizeof(filename_buf) - strlen(home));
+        filename = filename_buf;
+    }
+    else
+    {
+        filename = g_in->buffer;
+    }
+
+    // Open the file and write it.
+    FILE *fp = fopen(filename, "w");
     if (!fp)
     {
         tui_status_begin();
-        tui_printf("Failed to open file '%s'", g_in->buffer);
+        tui_printf("Failed to open file '%s'", filename);
         tui_status_end();
         return;
     }
@@ -327,7 +346,7 @@ tui_save_to_file(void)
     tui_status_begin();
     tui_say("Wrote ");
     tui_print_size(buffer_size);
-    tui_printf(" to '%s'", g_in->buffer);
+    tui_printf(" to '%s'", filename);
     tui_status_end();
 }
 
