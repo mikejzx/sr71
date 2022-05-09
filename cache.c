@@ -226,6 +226,12 @@ cache_deinit(void)
     {
         const struct cached_item *const item = &s_cache.items[i];
 
+        if (*item->uri.query)
+        {
+            // Skip if the item has a query--we don't cache these pages
+            continue;
+        }
+
         /* Make all the directories as needed */
         // So here, 'path' represents the entire path on-disk, 'path_rel' is
         // the path from the start of the URI entry itself, which we iterate
@@ -383,9 +389,6 @@ cache_find(
 {
     g_recv->b_alt = NULL;
 
-    // For now we don't cache pages that have a URI query
-    if (*uri->query) return false;
-
     // See if we have the URI cached in memory already
     for (int i = 0; i < s_cache.count; ++i)
     {
@@ -401,6 +404,9 @@ cache_find(
         *o = item;
         return true;
     }
+
+    // URIs with queries are not cached on disk
+    if (*uri->query) goto fail;
 
 #if CACHE_USE_DISK
     // Search the on-disk cache
@@ -558,8 +564,6 @@ cache_push_current(void)
     struct cached_item *item = NULL;
 
     if (
-        // For now we don't cache pages that have a URI query
-        *g_state->uri.query ||
         // Don't cache internal pages
         g_state->uri.protocol == PROTOCOL_INTERNAL) return NULL;
 
@@ -597,25 +601,30 @@ cache_push_current(void)
     memcpy(item->data, g_recv->b, item->data_size);
 
 #if CACHE_USE_DISK
-    // Write URI string
-    item->uristr_len = uri_str(
-        &item->uri,
-        item->uristr,
-        sizeof(item->uristr),
-        URI_FLAGS_NO_PORT_BIT |
-            URI_FLAGS_NO_TRAILING_SLASH_BIT |
-            URI_FLAGS_NO_GOPHER_ITEM_BIT |
-            URI_FLAGS_NO_QUERY_BIT);
+    // Disk-cache only stuff.  Not applied to items which have queries as we
+    // don't store them on-disk
+    if (!*item->uri.query)
+    {
+        // Write URI string
+        item->uristr_len = uri_str(
+            &item->uri,
+            item->uristr,
+            sizeof(item->uristr),
+            URI_FLAGS_NO_PORT_BIT |
+                URI_FLAGS_NO_TRAILING_SLASH_BIT |
+                URI_FLAGS_NO_GOPHER_ITEM_BIT |
+                URI_FLAGS_NO_QUERY_BIT);
 
-    // Generate a SHA256 hash of the content.  The algorithm used shouldn't
-    // matter too much, as it's literally only used to detect changes in file
-    // content.
-    const EVP_MD *md = EVP_sha256();
-    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(ctx, md, NULL);
-    EVP_DigestUpdate(ctx, item->data, item->data_size);
-    EVP_DigestFinal_ex(ctx, item->hash, &item->hash_len);
-    EVP_MD_CTX_free(ctx);
+        // Generate a SHA256 hash of the content.  The algorithm used shouldn't
+        // matter too much, as it's literally only used to detect changes in
+        // file content.
+        const EVP_MD *md = EVP_sha256();
+        EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, md, NULL);
+        EVP_DigestUpdate(ctx, item->data, item->data_size);
+        EVP_DigestFinal_ex(ctx, item->hash, &item->hash_len);
+        EVP_MD_CTX_free(ctx);
+    }
 #endif // CACHE_USE_DISK
 
     s_cache.total_size += item->data_size;

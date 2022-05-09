@@ -34,15 +34,14 @@ struct lb_item
             uint8_t _padding[5];
         } b;
 
-        struct lb_glue
-        {
-            bool no_stretch;
-        } g;
-
         // Glue is used to "stick the boxes together" and are what essentially
         // define the space.  We have no reason to use stretch/shrink
         // properties as defined in Knuth-Plass, as our implementation does not
         // need to support proportional fonts.
+        struct lb_glue
+        {
+            bool no_stretch;
+        } g;
 
         // Penalties can be used to define breakpoints within the paragraph;
         // (e.g. hyphenation points) though have a number associated with them

@@ -149,7 +149,7 @@ search_highlight_matches(void)
             --line_end);
 
         tui_cursor_move(
-            g_pager->margin.l + 1 + line_begin->indent +
+            g_pager->margin.l + line_begin->indent +
             utf8_width(
                 line_begin->s, match->begin.loc - line_begin->s),
             (match->begin.line - g_pager->scroll) + 1);
@@ -168,7 +168,7 @@ search_highlight_matches(void)
                 ++line_cur)
             {
                 tui_cursor_move(
-                    g_pager->margin.l + 1 + line_cur->indent,
+                    g_pager->margin.l + line_cur->indent,
                     (line_cur - line_begin +
                      match->begin.line - g_pager->scroll) + 1);
                 tui_say("\x1b[7m");
@@ -178,7 +178,7 @@ search_highlight_matches(void)
 
             // And the rest of the highlighted word on the ending line
             tui_cursor_move(
-                g_pager->margin.l + 1 + line_end->indent,
+                g_pager->margin.l + line_end->indent,
                 (match->end.line - g_pager->scroll) + 1);
             tui_say("\x1b[7m");
             tui_sayn(line_end->s, match->end.loc - line_end->s);

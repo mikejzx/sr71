@@ -160,6 +160,7 @@ uri_cmp_notrailing(
 
     return (
         len_a == len_b &&
+        strncmp(a->query, b->query, URI_QUERY_MAX) == 0 &&
         strncmp(a->hostname, b->hostname, URI_HOSTNAME_MAX) == 0 &&
         strncmp(a->path, b->path, len_a) == 0 &&
         a->protocol == b->protocol) ? 0 : -1;

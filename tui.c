@@ -522,9 +522,6 @@ tui_go_to_uri(
     bool do_cache = false;
     struct cached_item *cache_item = NULL;
 
-    // For now we don't cache pages that have a URI query
-    if (*uri.query) force_nocache = true;
-
     // Handle protocol/requests
     switch (uri.protocol)
     {

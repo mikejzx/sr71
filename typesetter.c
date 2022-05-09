@@ -555,7 +555,7 @@ typeset_gemtext(
             gemtext.raw_bytes_skip = 2;
         }
         // Parse blockquotes
-        else if (rawline->bytes > strlen(">") &&
+        else if (rawline->bytes >= strlen(">") &&
             strncmp(rawline->s, ">", strlen(">")) == 0)
         {
             gemtext.mode = PARSE_BLOCKQUOTE;
@@ -571,6 +571,14 @@ typeset_gemtext(
             gemtext.indent_canon = 0;
             line->prefix_len = gemtext.prefix_len;
             gemtext.prefix_len = strlen(BLOCKQUOTE_PREFIX);
+
+            if (rawline->bytes == strlen(">"))
+            {
+                // Single blockquote character on it's own; the prefix has been
+                // printed already so we can call it a day
+                LINE_FINISH();
+                continue;
+            }
 
             gemtext.raw_bytes_skip = strspn(rawline->s + 1, " ") + 1;
         }

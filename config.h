@@ -52,7 +52,7 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
  * paragraphs which are not directly after a heading.  Set to 'always' to always
  * indent the paragraphs, whether they are under headings or not.
  */
-#define GEMTEXT_FANCY_PARAGRAPH_INDENT 3
+#define GEMTEXT_FANCY_PARAGRAPH_INDENT 0 //3
 #define GEMTEXT_FANCY_PARAGRAPH_INDENT_ALWAYS 0
 
 // Set to 1 to use vi-style tilde at end of buffer
