@@ -2,7 +2,12 @@
 #include "gopher.h"
 #include "state.h"
 #include "tui.h"
+#include "tui_input_prompt.h"
 #include "uri.h"
+
+static struct uri s_search_uri = { 0 };
+
+static void gopher_search_complete(void);
 
 void
 gopher_deinit(void)
@@ -24,6 +29,26 @@ gopher_request(struct uri *uri)
         !uri->hostname ||
         uri->hostname[0] == '\0') return -1;
 
+    // Gopher search: give an input prompt, and request link with input as
+    //                the query.
+    if (uri->gopher_item == GOPHER_ITEM_SEARCH &&
+        !*uri->query)
+    {
+        s_search_uri = *uri;
+
+        // Show the input prompt
+        tui_input_prompt_begin(
+            TUI_MODE_INPUT,
+            "Enter gopher search query: ", 0,
+            NULL,
+            gopher_search_complete);
+
+        // Need to return an error or else the TUI will think we successfully
+        // requested something.  The gopher_search_complete will navigate to
+        // new search page for us.
+        return -1;
+    }
+
     ph->sock = connect_socket_to(
         uri->hostname,
         uri->port == 0 ? 70 : uri->port);
@@ -35,10 +60,21 @@ gopher_request(struct uri *uri)
     tui_status_say("Successful connection");
 
     // Create the gopher request
-    // <url><cr-lf> (same as Gemini)
     static char request[1024];
-    size_t len = snprintf(request, sizeof(request),
-        "%s\r\n", uri->path);
+    size_t len;
+    if (uri->gopher_item != GOPHER_ITEM_SEARCH)
+    {
+        // <url><cr-lf> (same as Gemini)
+        len = snprintf(request, sizeof(request),
+            "%s\r\n", uri->path);
+    }
+    else
+    {
+        // Search selector
+        // <url>\t<search query><cr-lf><tab>
+        len = snprintf(request, sizeof(request),
+            "%s\t%s\r\n", uri->path, uri->query);
+    }
     if (write(ph->sock, request, len) == -1)
     {
         tui_status_begin();
@@ -81,4 +117,14 @@ fail:
     return ret_status;
 
 #endif // PROTOCOL_SUPPORT_GOPHER
+}
+
+/* Search prompt completion callback */
+static void
+gopher_search_complete(void)
+{
+    // Repeat request to the same URI, but with the input the query component
+    struct uri uri = s_search_uri;
+    uri_set_query(&uri, g_in->buffer);
+    tui_go_to_uri(&uri, true, true);
 }

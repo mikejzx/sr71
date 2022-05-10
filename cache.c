@@ -389,6 +389,12 @@ cache_find(
 {
     g_recv->b_alt = NULL;
 
+    // If the link is a gopher item with no query then there's nothing to read
+    // from cache (as the link is a prompt)
+    if (uri->protocol == PROTOCOL_GOPHER &&
+        uri->gopher_item == GOPHER_ITEM_SEARCH &&
+        !*uri->query) return false;
+
     // See if we have the URI cached in memory already
     for (int i = 0; i < s_cache.count; ++i)
     {

@@ -23,7 +23,6 @@ static const char GOPHER_ITEM_IDS[GOPHER_ITEM_COUNT] =
     [GOPHER_ITEM_TEXT] = '0',
     [GOPHER_ITEM_SEARCH] = '7',
     [GOPHER_ITEM_BIN] = '0',
-    // TODO: implement others
 };
 
 static inline enum gopher_item_type
@@ -39,9 +38,10 @@ gopher_item_lookup(char c)
 // MIME types that can correspond with gopher items
 static const char *GOPHER_ITEM_MIME[GOPHER_ITEM_COUNT] =
 {
-    [GOPHER_ITEM_DIR]  = MIME_GOPHERMAP,
-    [GOPHER_ITEM_TEXT] = MIME_PLAINTEXT,
-    [GOPHER_ITEM_BIN]  = "",
+    [GOPHER_ITEM_DIR]    = MIME_GOPHERMAP,
+    [GOPHER_ITEM_TEXT]   = MIME_PLAINTEXT,
+    [GOPHER_ITEM_BIN]    = "",
+    [GOPHER_ITEM_SEARCH] = MIME_GOPHERMAP,
 };
 
 /* Get MIME type from Gopher item */
