@@ -397,7 +397,7 @@ typeset_gemtext(
             break;
 
         // Level 4 headings are non-standard, but we support them nevertheless
-        // as there are some pages which decide to use them anyway
+        // as there are some pages which decide to use them anyway.
         case 4:
             gemtext.esc = buffer_pos;
             LINE_STRNCPY_LIT(COLOUR_HEADING4);
@@ -569,8 +569,8 @@ typeset_gemtext(
             strcpy(gemtext.prefix, BLOCKQUOTE_PREFIX);
             gemtext.indent = GEMTEXT_INDENT_BLOCKQUOTE;
             gemtext.indent_canon = 0;
-            line->prefix_len = gemtext.prefix_len;
             gemtext.prefix_len = strlen(BLOCKQUOTE_PREFIX);
+            line->prefix_len = gemtext.prefix_len;
 
             if (rawline->bytes == strlen(">"))
             {
@@ -583,15 +583,72 @@ typeset_gemtext(
             gemtext.raw_bytes_skip = strspn(rawline->s + 1, " ") + 1;
         }
 
+        // Non-standard experimental feature: we parse simple key-value pairs,
+        // such as
+        //   Key: value.  This can be any text and will be wrapped
+        //        very nicely like this via a hanging indent.
+        //
+        // For now we don't allow whitespace in the key.  If we were to add it,
+        // there'd need to be some logic to ensure that the line really is
+        // supposed to be interpreted as a key-value pair, i.e. it should not
+        // be if the colon is e.g. at the end of the line or if the colon just
+        // happened to appear on the line for whatever reason...  It would also
+        // need to make sure that the colon appears on the first broken line,
+        // and not after it.
+        //
+        // Perhaps a more elaborate "table" parsing could work, checking for
+        // consecutive lines which have a colon in their first-half or so, but
+        // this would be tricky as we'd need to jump back and forth in the
+        // gemtext source, which the parser currently isn't designed to do.
+        //
+        // However, this approach would also be nice as it could figure out
+        // where to align the "value" part, in-line with the entries around it,
+        // so e.g.:
+        //
+        //   A:   This is aligned with below which has a longer key,
+        //        and will wrap nicely too.
+        //   B/C: testing
+        //   D:   This is aligned too.
+        //
+        if (gemtext.mode == PARSE_PARAGRAPH && !line->is_heading)
+        {
+            for (const char *i = rawline->s;
+                i <= rawline_end && *i;
+                ++i)
+            {
+                if (isspace(*i) ||
+                    *i == '\n' ||
+                    !*i)
+                {
+                    gemtext.hang = 0;
+                    break;
+                }
+                if (*i == ':')
+                {
+                    // Move past the colon
+                    ++i;
+
+                    // Move to one space after the colon
+                    ++i;
+
+                    // Use the distance as the hang
+                    gemtext.hang = utf8_width(
+                        rawline->s,
+                        i - rawline->s);
+                    break;
+                }
+            }
+        }
+
     wrap: ;
         // Margins are accounted for in "width total" here
-        int width = width_total - gemtext.indent;
+        int width = width_total - gemtext.indent - gemtext.prefix_len;
 
         /* Line breaking */
         struct lb_prepare_args pa =
         {
             .line = rawline->s,
-            .line_end = rawline->s + rawline->bytes,
+            .line_end = rawline_end,
             .length = width,
             .offset = gemtext.raw_bytes_skip,
             .indent = gemtext.indent_canon,
@@ -875,6 +932,13 @@ typeset_gophermap(
             }
             ADD_LINK();
             LINE_PRINTF(" [%d dir] ", (int)l_index);
+            break;
+
+        // Search
+        case '7':
+            uri.gopher_item = GOPHER_ITEM_SEARCH;
+            ADD_LINK();
+            LINE_PRINTF(" [%d search] ", (int)l_index);
             break;
 
         // Binary files

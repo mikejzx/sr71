@@ -185,6 +185,10 @@ connect_socket_to(const char *hostname, int port)
         freeaddrinfo(res);
         return 0;
     }
+    else
+    {
+        tui_printf("Connected.");
+    }
     freeaddrinfo(res);
     return sock;
 }

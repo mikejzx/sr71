@@ -289,10 +289,30 @@ uri_abs(struct uri *restrict base, struct uri *restrict rel)
     rel->port     = base->port;
     strncpy(rel->hostname, base->hostname, URI_HOSTNAME_MAX);
 
+    char *dir_end = NULL;
+    if (*rel->path != '/')
+    {
+        // The path is in same directory as current document
+        size_t base_len = strlen(base->path);
+        dir_end = base->path + base_len;
+        for (; dir_end > base->path && *dir_end != '/'; --dir_end);
+
+        // Temporarily modify the base directory so that the paths are appended
+        // correctly (only if the base path isn't itself a directory)
+        if (dir_end < base->path + base_len - 1) *dir_end = '\0';
+        else dir_end = NULL;
+    }
+
     // Append and normalise paths
     char old_path[URI_PATH_MAX];
     strncpy(old_path, rel->path, URI_PATH_MAX);
     path_normalise(base->path, old_path, rel->path);
+
+    if (dir_end)
+    {
+        // Restore trailing slash
+        *dir_end = '/';
+    }
 }
 
 /* Set the query component of a URI in a properly encoded form */

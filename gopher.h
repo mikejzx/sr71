@@ -11,6 +11,7 @@ enum gopher_item_type
     GOPHER_ITEM_DIR = 0,
     GOPHER_ITEM_TEXT,
     GOPHER_ITEM_BIN,
+    GOPHER_ITEM_SEARCH,
 
     GOPHER_ITEM_COUNT
 };
@@ -20,7 +21,8 @@ static const char GOPHER_ITEM_IDS[GOPHER_ITEM_COUNT] =
 {
     [GOPHER_ITEM_DIR] = '1',
     [GOPHER_ITEM_TEXT] = '0',
-    [GOPHER_ITEM_BIN] = 0,
+    [GOPHER_ITEM_SEARCH] = '7',
+    [GOPHER_ITEM_BIN] = '0',
     // TODO: implement others
 };
 

@@ -155,7 +155,7 @@ struct fav_node *
 favourites_find(const struct uri *u)
 {
     char s[URI_STRING_MAX];
-    uri_str(u, s, sizeof(s), 0);
+    uri_str(u, s, sizeof(s), URI_FLAGS_NO_TRAILING_SLASH_BIT);
 
     for (struct fav_node *n = s_head;
         n != NULL;
@@ -198,7 +198,7 @@ favourites_push_uri(
 
     // We allocate maximum URI size for now to keep things simple
     n->uri = malloc(URI_STRING_MAX);
-    uri_str(u, n->uri, URI_STRING_MAX, 0);
+    uri_str(u, n->uri, URI_STRING_MAX, URI_FLAGS_NO_TRAILING_SLASH_BIT);
 
     if (title_len)
     {
