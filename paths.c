@@ -11,8 +11,8 @@ static const struct path_info
 
         enum path_info_prefix
         {
-            // Use to null-terminate the array (sets is_valid to false)
-            PATH_PREFIX_NULL = 0,
+            // Used for sentinel in info array
+            PATH_PREFIX_DUMMY = 0,
 
             // ~/.local/share
             PATH_PREFIX_DATA,
@@ -41,6 +41,7 @@ static const struct path_info
     [PATH_ID_CACHE_META_TMP] = { { PATH_PREFIX_DATA }, "/cache/meta.dir.tmp" },
     [PATH_ID_CACHE_META_BAK] = { { PATH_PREFIX_DATA }, "/cache/meta.dir.bak" },
 
+    // sentinel
     [PATH_ID_COUNT]          = { { 0 } }
 };
 

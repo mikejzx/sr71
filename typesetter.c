@@ -169,6 +169,7 @@ typeset_gemtext(
 
         // Reference to the link being parsed (if any)
         struct pager_link *link;
+        int link_index;
 
         int link_maxidx_strlen;
 
@@ -248,6 +249,7 @@ typeset_gemtext(
         line->len = utf8_width(line->s, line->bytes); \
         line->raw_dist = gemtext.raw_dist; \
         line->indent = gemtext.indent; \
+        line->link_index = gemtext.link_index; \
         if ((b->line_count + 1) * sizeof(struct pager_buffer_line) >= \
             b->lines_capacity) \
         { \
@@ -267,7 +269,6 @@ typeset_gemtext(
             min(n_bytes, buffer_end_pos - buffer_pos)); \
         buffer_pos += n_bytes; \
         gemtext.raw_dist += n_bytes; \
-        if (gemtext.link) gemtext.link->buffer_loc_len += n_bytes; \
     } while(0)
 #define LINE_STRNCPY_LIT(str) LINE_STRNCPY((str), strlen((str)))
 #define LINE_PRINTF(fmt, ...) \
@@ -278,8 +279,7 @@ typeset_gemtext(
             __VA_ARGS__); \
     BUFFER_CHECK_SIZE(LINE_PRINTF_N_BYTES); \
     buffer_pos += LINE_PRINTF_N_BYTES; \
-    gemtext.raw_dist += LINE_PRINTF_N_BYTES; \
-    if (gemtext.link) gemtext.link->buffer_loc_len += LINE_PRINTF_N_BYTES;
+    gemtext.raw_dist += LINE_PRINTF_N_BYTES;
 
     int raw_index;
 
@@ -315,6 +315,7 @@ typeset_gemtext(
             rawline = &t->raw_lines[raw_index];
 
         gemtext.link = NULL;
+        gemtext.link_index = -1;
         gemtext.raw_dist = 0;
         gemtext.hang = 0;
         gemtext.indent = GEMTEXT_INDENT_PARAGRAPH;
@@ -450,7 +451,7 @@ typeset_gemtext(
             strncmp(rawline->s, "=>", strlen("=>")) == 0)
         {
             pager_check_link_capacity();
-            size_t l_index = g_pager->link_count++;
+            gemtext.link_index = g_pager->link_count++;
 
             /* Get URI. */
             // Begins where there is no whitespace, and cannot begin with an
@@ -486,12 +487,10 @@ typeset_gemtext(
 
             // Add link to page state and set buffer location so we can
             // highlight on selection
-            gemtext.link = &g_pager->links[l_index];
+            gemtext.link = &g_pager->links[gemtext.link_index];
             gemtext.link->uri = uri_parse(l_uri, l_uri_len);
             uri_abs(&g_state->uri, &gemtext.link->uri);
-            gemtext.link->buffer_loc = buffer_pos;
             gemtext.link->line_index = b->line_count;
-            gemtext.link->buffer_loc_len = 0;
 
             // This is so that text wrapping will work for the link title.  We
             // want to print from where the title string starts if it exists
@@ -513,7 +512,7 @@ typeset_gemtext(
             gemtext.hang = 0;
             char l_index_str[16];
             int l_index_strlen = snprintf(l_index_str, sizeof(l_index_str),
-                "%d", (int)l_index);
+                "%d", gemtext.link_index);
             gemtext.hang =
                 max(gemtext.link_maxidx_strlen - l_index_strlen, 0);
             LINE_PRINTF("%*s", gemtext.hang, "");
@@ -701,7 +700,6 @@ typeset_gemtext(
 
             buffer_pos += len;
             gemtext.raw_dist += len;
-            if (gemtext.link) gemtext.link->buffer_loc_len += len;
 
             LINE_FINISH();
         }
@@ -746,6 +744,7 @@ typeset_plaintext(
         line->is_hyphenated = false;
         line->indent = 0;
         line->prefix_len = 0;
+        line->link_index = -1;
 
         if (rawline->bytes < 1)
         {
@@ -825,12 +824,10 @@ typeset_gophermap(
 #define ADD_LINK() \
     {\
         pager_check_link_capacity(); \
-        l_index = g_pager->link_count++; \
-        struct pager_link *link = &g_pager->links[l_index]; \
+        line->link_index = g_pager->link_count++; \
+        struct pager_link *link = &g_pager->links[line->link_index]; \
         memcpy(&link->uri, &uri, sizeof(struct uri)); \
         link->line_index = b->line_count; \
-        link->buffer_loc = buffer_pos; \
-        link->buffer_loc_len = item_display_len; \
     }
 
     // Iterate over each of the raw lines in the buffer
@@ -855,6 +852,7 @@ typeset_gophermap(
         line->is_hyphenated = false;
         line->indent = 0;
         line->prefix_len = 0;
+        line->link_index = -1;
         rawline_end = rawline->s + rawline->bytes;
 
         // Write display string to the buffer
@@ -881,7 +879,6 @@ typeset_gophermap(
         uri.port = atoi(item_hostname + item_hostname_len + 1);
 
         // Check item type for selector
-        size_t l_index = 0;
         switch(*rawline->s)
         {
         // Informational message
@@ -898,28 +895,28 @@ typeset_gophermap(
         case 'd':
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d doc] ", (int)l_index);
+            LINE_PRINTF(" [%d doc] ", line->link_index);
             break;
 
         // HTML file
         case 'h':
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d html] ", (int)l_index);
+            LINE_PRINTF(" [%d html] ", line->link_index);
             break;
 
         // Sound file
         case 's':
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d snd] ", (int)l_index);
+            LINE_PRINTF(" [%d snd] ", line->link_index);
             break;
 
         // File (usually text)
         case '0':
             uri.gopher_item = GOPHER_ITEM_TEXT;
             ADD_LINK();
-            LINE_PRINTF(" [%d txt] ", (int)l_index);
+            LINE_PRINTF(" [%d txt] ", line->link_index);
             break;
 
         // Directory
@@ -931,14 +928,14 @@ typeset_gophermap(
                 strcat(uri.path, "/");
             }
             ADD_LINK();
-            LINE_PRINTF(" [%d dir] ", (int)l_index);
+            LINE_PRINTF(" [%d dir] ", line->link_index);
             break;
 
         // Search
         case '7':
             uri.gopher_item = GOPHER_ITEM_SEARCH;
             ADD_LINK();
-            LINE_PRINTF(" [%d search] ", (int)l_index);
+            LINE_PRINTF(" [%d search] ", line->link_index);
             break;
 
         // Binary files
@@ -947,14 +944,14 @@ typeset_gophermap(
         case '2':
             uri.gopher_item = GOPHER_ITEM_BIN;
             ADD_LINK();
-            LINE_PRINTF(" [%d bin] ", (int)l_index);
+            LINE_PRINTF(" [%d bin] ", line->link_index);
             break;
 
         // Unknown/unsupported item type
         default:
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d unsupported] ", (int)l_index);
+            LINE_PRINTF(" [%d unsupported] ", line->link_index);
             break;
         }
 

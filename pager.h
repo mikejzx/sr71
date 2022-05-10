@@ -44,6 +44,9 @@ struct pager_buffer_line
 
     // Length of prefix that is applied to this line
     size_t prefix_len;
+
+    // Link associated with line (index in the pager state links array)
+    int link_index;
 };
 
 struct pager_buffer
@@ -59,10 +62,6 @@ struct pager_buffer
 struct pager_link
 {
     struct uri uri;
-
-    // Location/length of link in buffer
-    char *buffer_loc;
-    size_t buffer_loc_len;
     int line_index;
 };
 

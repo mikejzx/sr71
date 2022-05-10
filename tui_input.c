@@ -95,8 +95,7 @@ static const struct movement_escape
 
     // TODO: arrow keys
 
-    // Null-terminator
-    { NULL },
+    { 0 }, // sentinel
 };
 
 static inline void

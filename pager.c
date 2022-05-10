@@ -241,74 +241,73 @@ void pager_scroll_heading(int dir)
 void
 pager_paint(bool full)
 {
-    bool updating_links =
+    bool update_sel_link =
         g_pager->link_index_prev != g_pager->link_index;
 
     // Partial updates only run if selected link changed
-    if (!full && !updating_links) return;
+    if (!full && !update_sel_link) return;
 
     // Draw the visible buffer
+    int line_index;
+    bool moved, will_print;
+    struct pager_buffer_line *line;
     for (int i = 0; i < g_pager->visible_buffer.h; ++i)
     {
-        int line_index = i + g_pager->scroll;
+        line_index = i + g_pager->scroll;
+        line = &g_pager->visible_buffer.rows[i];
         if (line_index < g_pager->buffer.line_count)
         {
-            g_pager->visible_buffer.rows[i] = g_pager->buffer.lines[line_index];
+            *line = g_pager->buffer.lines[line_index];
         }
         else
         {
             // Past end of text buffer
-            g_pager->visible_buffer.rows[i] =
+            *line =
                 (struct pager_buffer_line) { NULL, 0, 0 };
         }
 
-        struct pager_buffer_line *const line = &g_pager->visible_buffer.rows[i];
-
         // Draw the line
-        bool moved = false;
-        bool will_print;
+        moved = false;
         if (i < g_pager->buffer.line_count - g_pager->scroll)
         {
+            // Whether line will be redrawn.  For full redraws this is always
+            // the case, for partial redraw then we only re-print the selected
+            // and deselected links.
             will_print = full;
 
+        #define DRAW_START() \
+            /* Move cursor to end of left margin, and fill the indent */ \
+            if (!moved) \
+            { \
+                tui_cursor_move( \
+                    g_pager->margin.l, \
+                    i + 1 + PAGER_TOP); \
+                tui_printf("%*s", line->indent, ""); \
+                moved = true; \
+            }
+
             // Link highlighting
-            for (int l = 0; l < g_pager->link_count; ++l)
+            if (line->link_index > -1 &&
+                line->link_index < g_pager->link_count &&
+                (full ||
+                // If we are doing a partial refresh (just links) then we need
+                // to only update the newly-selected link and the previously
+                // deselected one.
+                (!full && update_sel_link &&
+                    (g_pager->link_index == line->link_index ||
+                    g_pager->link_index_prev == line->link_index))))
             {
-                // If we are doing a partial refresh, of just links, then we
-                // need to only update the link that was selected and the one
-                // that was deselected
-                if (!full &&
-                    updating_links &&
-                    l != g_pager->link_index &&
-                    l != g_pager->link_index_prev)
+                DRAW_START();
+                will_print = true;
+
+                // Print the colours
+                if (line->link_index == g_pager->link_index)
                 {
-                    continue;
+                    tui_say(COLOUR_PAGER_LINK_SELECTED);
                 }
-
-                struct pager_link *link = &g_pager->links[l];
-                if (line->s >= link->buffer_loc &&
-                    line->s < link->buffer_loc + link->buffer_loc_len)
+                else
                 {
-                    // Move cursor to end of left margin, and fill the indent
-                    if (!moved)
-                    {
-                        tui_cursor_move(
-                            g_pager->margin.l,
-                            i + 1 + PAGER_TOP);
-                        tui_printf("%*s", line->indent, "");
-                        moved = true;
-                    }
-                    will_print = true;
-
-                    if (l == g_pager->link_index)
-                    {
-                        tui_say(COLOUR_PAGER_LINK_SELECTED);
-                    }
-                    else
-                    {
-                        tui_say(COLOUR_PAGER_LINK);
-                    }
-                    break;
+                    tui_say(COLOUR_PAGER_LINK);
                 }
             }
 
@@ -316,20 +315,7 @@ pager_paint(bool full)
             if (!will_print) continue;
 
             // Move cursor to end of left margin, and fill the indent
-            if (!moved)
-            {
-                tui_cursor_move(
-                    g_pager->margin.l,
-                    i + 1 + PAGER_TOP);
-                tui_printf("%*s", line->indent, "");
-                moved = true;
-            }
-
-            //line->len = min(line->len,
-            //    g_pager->visible_buffer.w -
-            //    g_pager->margin.l /*-
-            //    g_pager->margin.r*/);
-            //line->bytes = utf8_size_w_formats(line->s, line->len);
+            DRAW_START();
 
             tui_sayn(line->s, line->bytes);
 
