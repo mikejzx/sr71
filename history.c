@@ -73,19 +73,51 @@ history_push(struct uri *uri)
     // Don't log internal pages
     if (uri->protocol == PROTOCOL_INTERNAL) return;
 
-    FILE *fp = fopen(path_get(PATH_ID_HISTORY_LOG), "a");
+    FILE *fp = fopen(path_get(PATH_ID_HISTORY_LOG), "a+b");
     if (!fp)
     {
         tui_status_say("error: failed to write to history log file");
         return;
     }
 
-    // Write current timestamp, and URI string
+    // Seek to end of file
+    if (fseek(fp, 0, SEEK_END) != 0)
+    {
+        fclose(fp);
+        tui_status_say("error: failed to write to history log file (fseek)");
+        return;
+    }
+
+    // Generate string of the current URI
     char uri_string[URI_STRING_MAX];
     size_t uri_string_len = uri_str(
         uri,
         uri_string,
         sizeof(uri_string), 0);
+
+    // Read the last history item from the file
+    char buf[256];
+    if (getline_reverse(buf, sizeof(buf), fp) != NULL)
+    {
+        // If the URI is the current URI, then don't push it again
+        const char *uri_start;
+        for (uri_start = buf;
+            uri_start < buf + sizeof(buf) && *uri_start != ' ';
+            ++uri_start);
+        for (;
+            uri_start < buf + sizeof(buf) && *uri_start == ' ';
+            ++uri_start);
+        if (strncmp(
+            uri_start,
+            uri_string,
+            sizeof(uri_string)) == 0)
+        {
+            fclose(fp);
+            return;
+        }
+    }
+
+    // Append current timestamp, and URI string to the history log
     if (uri_string_len)
     {
         fprintf(fp, "%lu %s\n", time(NULL), uri_string);
@@ -188,6 +220,9 @@ history_log_display(void)
         const char *uri_start;
         for (uri_start = buf;
             uri_start < buf + sizeof(buf) && *uri_start != ' ';
+            ++uri_start);
+        for (;
+            uri_start < buf + sizeof(buf) && *uri_start == ' ';
             ++uri_start);
 
         // Parse item timestamp

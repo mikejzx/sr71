@@ -324,6 +324,8 @@ pager_paint(bool full)
 
             // Don't clear if not full
             if (!full) continue;
+
+        #undef DRAW_START
         }
         else
         {
