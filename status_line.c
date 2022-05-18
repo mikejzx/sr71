@@ -37,7 +37,7 @@ status_line_paint(void)
         case STATUS_LINE_COMPONENT_LEFT:
         {
             // Just display page URI for now
-            c->bytes = uri_str(&g_state->uri,
+            c->bytes = uri_str(&g_state.uri,
                 text, sizeof(text),
             #if STATUS_LINE_FANCY_URI_FORMAT
                 URI_FLAGS_FANCY_BIT

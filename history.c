@@ -14,7 +14,7 @@ void
 history_init(void)
 {
     // Initialise history stack
-    g_hist = &g_state->hist;
+    g_hist = &g_state.hist;
     g_hist->items = calloc(MAX_HISTORY_SIZE, sizeof(struct history_item));
     g_hist->ptr = g_hist->items;
     g_hist->oldest_ptr = g_hist->items;

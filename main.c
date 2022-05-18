@@ -11,7 +11,7 @@
 //#include "line_break_alg.h"
 //#include "hyphenate_alg.h"
 
-struct state *g_state;
+struct state g_state;
 struct recv_buffer *g_recv;
 
 void program_exited(void);
@@ -41,8 +41,7 @@ main(int argc, char **argv)
     return 0;
 #endif
 
-    g_state = calloc(1, sizeof(struct state));
-    g_recv = &g_state->recv_buffer;
+    g_recv = &g_state.recv_buffer;
 
     // Create initial raw receive buffer
     g_recv->capacity = 4096;
@@ -143,7 +142,7 @@ main(int argc, char **argv)
         recv_buffer_check_size(g_recv->size);
         memcpy(g_recv->b, PAGER_CONTENT, g_recv->size);
         mime_parse(&g_recv->mime, MIME_GEMTEXT, strlen(MIME_GEMTEXT));
-        g_state->uri = uri_parse(URI_INTERNAL_BLANK, strlen(URI_INTERNAL_BLANK));
+        g_state.uri = uri_parse(URI_INTERNAL_BLANK, strlen(URI_INTERNAL_BLANK));
 
         // Typeset the content
         pager_update_page(-1, 0);
@@ -183,7 +182,6 @@ program_exited(void)
     history_deinit();
 
     free(g_recv->b);
-    free(g_state);
 
     paths_deinit();
     utf8_deinit();

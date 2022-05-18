@@ -20,7 +20,7 @@ tui_init(void)
 {
     setlocale(LC_ALL, "C.UTF-8");
 
-    g_tui = &g_state->tui;
+    g_tui = &g_state.tui;
 
     {
         struct termios t;
@@ -359,14 +359,14 @@ tui_refresh_page(void)
     unsigned old_hash_len = 0;
 
     if (g_pager->cached_page &&
-        uri_cmp_notrailing(&g_pager->cached_page->uri, &g_state->uri) == 0)
+        uri_cmp_notrailing(&g_pager->cached_page->uri, &g_state.uri) == 0)
     {
         old_hash_len = g_pager->cached_page->hash_len;
         memcpy(old_hash, g_pager->cached_page->hash, old_hash_len);
     }
 #endif
 
-    int status = tui_go_to_uri(&g_state->uri, false, true);
+    int status = tui_go_to_uri(&g_state.uri, false, true);
 
 #if CACHE_USE_DISK
     if (status == 0 &&
@@ -394,7 +394,7 @@ tui_refresh_page(void)
 void
 tui_favourite_set(void)
 {
-    const struct uri *u = &g_state->uri;
+    const struct uri *u = &g_state.uri;
     struct fav_node *n = favourites_find(u);
     if (g_in->param_yesno)
     {
@@ -424,7 +424,7 @@ tui_favourite_toggle(void)
 {
     // If current page is favourited; remove it.  If it's not favourited, add
     // it.
-    const struct uri *u = &g_state->uri;
+    const struct uri *u = &g_state.uri;
     struct fav_node *n = favourites_find(u);
     if (n)
     {
@@ -488,7 +488,7 @@ tui_favourite_title_edited(void)
 void
 tui_favourite_push(void)
 {
-    const struct uri *u = &g_state->uri;
+    const struct uri *u = &g_state.uri;
     favourites_push_uri(u, g_in->buffer, g_in->buffer_len);
     tui_status_begin();
     tui_printf("\x1b[32madded to favourites: '%s'\x1b[0m", g_in->buffer);
@@ -660,7 +660,7 @@ tui_go_to_uri(
         }
 
         // Update current URI state
-        memcpy(&g_state->uri, uri_in, sizeof(struct uri));
+        memcpy(&g_state.uri, uri_in, sizeof(struct uri));
 
         // Push the page to the cache
         if (do_cache) { g_pager->cached_page = cache_push_current(); }
@@ -678,7 +678,7 @@ tui_go_to_uri(
             // Update gopher item type from cache
             if (uri.protocol == PROTOCOL_GOPHER)
             {
-                g_state->uri.gopher_item =
+                g_state.uri.gopher_item =
                     gopher_mime_to_item(&cache_item->mime);
             }
         }
@@ -692,7 +692,7 @@ tui_go_to_uri(
         // Push to history (undo/redo and history log)
         if (push_hist)
         {
-            history_push(&g_state->uri);
+            history_push(&g_state.uri);
         }
 
         // Update the pager

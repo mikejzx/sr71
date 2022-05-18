@@ -122,7 +122,6 @@ void
 tui_input_init(void)
 {
     g_in = &g_tui->in;
-    memset(g_in, 0, sizeof(struct tui_input));
     tui_input_mode(TUI_MODE_NORMAL);
 }
 
@@ -187,7 +186,7 @@ tui_input_common(const char *buf, const ssize_t buf_len)
             .protocol = PROTOCOL_NONE,
             .path = "../",
         };
-        uri_abs(&g_state->uri, &uri_parent);
+        uri_abs(&g_state.uri, &uri_parent);
         tui_go_to_uri(&uri_parent, true, false);
     } return TUI_OK;
 
@@ -195,7 +194,7 @@ tui_input_common(const char *buf, const ssize_t buf_len)
     case (0100 ^ 'R'):
     {
         struct uri uri_root;
-        memcpy(&uri_root, &g_state->uri, sizeof(struct uri));
+        memcpy(&uri_root, &g_state.uri, sizeof(struct uri));
         uri_root.path[0] = '/';
         uri_root.path[1] = '\0';
         tui_go_to_uri(&uri_root, true, false);
@@ -393,7 +392,7 @@ tui_input_normal(const char *buf, const ssize_t buf_len)
         if (!pager_has_link())
         {
             // Use current page URI
-            uri = &g_state->uri;
+            uri = &g_state.uri;
         }
         else
         {

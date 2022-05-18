@@ -571,13 +571,13 @@ cache_push_current(void)
 
     if (
         // Don't cache internal pages
-        g_state->uri.protocol == PROTOCOL_INTERNAL) return NULL;
+        g_state.uri.protocol == PROTOCOL_INTERNAL) return NULL;
 
     // Check if the URI is in the cache already; so we can update it
     for (int i = 0; i < s_cache.count; ++i)
     {
         struct cached_item *m = &s_cache.items[i];
-        if (uri_cmp_notrailing(&m->uri, &g_state->uri) != 0) continue;
+        if (uri_cmp_notrailing(&m->uri, &g_state.uri) != 0) continue;
 
         item = m;
         s_cache.total_size -= m->data_size;
@@ -597,7 +597,7 @@ cache_push_current(void)
         return NULL;
     }
 
-    item->uri = g_state->uri;
+    item->uri = g_state.uri;
     item->timestamp = time(NULL);
     item->mime = g_recv->mime;
     item->data_size = g_recv->size;

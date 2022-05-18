@@ -50,7 +50,7 @@ struct state
     struct history_stack hist;
 };
 
-extern struct state *g_state;
+extern struct state g_state;
 extern struct recv_buffer *g_recv;
 
 /* Ensure recv buffer has enough size, and if not then reallocate it */

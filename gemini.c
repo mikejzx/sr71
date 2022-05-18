@@ -10,7 +10,7 @@ static void gemini_input_complete(void);
 void
 gemini_init(void)
 {
-    struct gemini *const gem = &g_state->gem;
+    struct gemini *const gem = &g_state.gem;
 
     // Initialise TLS.  We require at least TLS 1.2
     gem->ctx = SSL_CTX_new(TLS_method());
@@ -32,7 +32,7 @@ gemini_init(void)
 void
 gemini_deinit(void)
 {
-    struct gemini *const gem = &g_state->gem;
+    struct gemini *const gem = &g_state.gem;
 
     if (gem->sock) close(gem->sock);
 
@@ -43,7 +43,7 @@ int
 gemini_request(struct uri *uri)
 {
     int ret_status = -1;
-    struct gemini *const gem = &g_state->gem;
+    struct gemini *const gem = &g_state.gem;
 
     if (!uri ||
         !uri->hostname ||
@@ -262,13 +262,13 @@ got_crlf:
                 response_header_len - strlen("XX "));
 
             // Check the protocol and warn if it's cross
-            if (g_state->uri.protocol != redirect_uri.protocol)
+            if (g_state.uri.protocol != redirect_uri.protocol)
             {
                 // TODO: warn about cross-protocol redirects
             }
 
             // Resolve URI in case it is relative
-            uri_abs(&g_state->uri, &redirect_uri);
+            uri_abs(&g_state.uri, &redirect_uri);
 
             // Refuse to follow too many consecutive redirects
             ++gem->redirects;
@@ -313,7 +313,7 @@ static void
 gemini_input_complete(void)
 {
     // Repeat request to the same URI, but with the input the query component
-    struct uri uri = g_state->gem.last_uri_attempted;
+    struct uri uri = g_state.gem.last_uri_attempted;
     uri_set_query(&uri, g_in->buffer);
     tui_go_to_uri(&uri, true, true);
 }

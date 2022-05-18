@@ -15,7 +15,7 @@ PCH_SRC=pch.h
 PCH=$(PCH_SRC).gch
 PCH_DEPS=$(PCH_SRC).d
 
-.PHONY: all clean run debug
+.PHONY: all clean run mem debug
 
 all: $(OUT)
 

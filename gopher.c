@@ -12,7 +12,7 @@ static void gopher_search_complete(void);
 void
 gopher_deinit(void)
 {
-    struct gopher *ph = &g_state->ph;
+    struct gopher *ph = &g_state.ph;
     if (ph->sock) close(ph->sock);
 }
 
@@ -23,7 +23,7 @@ gopher_request(struct uri *uri)
     return -1;
 #else
     int ret_status = -1;
-    struct gopher *const ph = &g_state->ph;
+    struct gopher *const ph = &g_state.ph;
 
     if (!uri ||
         !uri->hostname ||

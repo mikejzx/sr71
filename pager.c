@@ -24,8 +24,7 @@ pager_recalc_margin(void)
 void
 pager_init(void)
 {
-    g_pager = &g_state->pager;
-    memset(g_pager, 0, sizeof(struct pager_state));
+    g_pager = &g_state.pager;
 
     g_pager->visible_buffer.rows = NULL;
     g_pager->visible_buffer_prev.rows = NULL;

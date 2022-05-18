@@ -55,7 +55,7 @@ favourites_has(const struct uri *uri)
 static inline bool
 favourites_is_viewing(void)
 {
-    return strncmp(g_state->uri.hostname,
+    return strncmp(g_state.uri.hostname,
         URI_INTERNAL_FAVOURITES_RAW,
         URI_HOSTNAME_MAX) == 0;
 }

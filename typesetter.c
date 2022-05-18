@@ -10,8 +10,6 @@
 void
 typesetter_init(struct typesetter *t)
 {
-    memset(t, 0, sizeof(struct typesetter));
-
     line_break_init();
 }
 
@@ -489,7 +487,7 @@ typeset_gemtext(
             // highlight on selection
             gemtext.link = &g_pager->links[gemtext.link_index];
             gemtext.link->uri = uri_parse(l_uri, l_uri_len);
-            uri_abs(&g_state->uri, &gemtext.link->uri);
+            uri_abs(&g_state.uri, &gemtext.link->uri);
             gemtext.link->line_index = b->line_count;
 
             // This is so that text wrapping will work for the link title.  We
@@ -518,7 +516,7 @@ typeset_gemtext(
             LINE_PRINTF("%*s", gemtext.hang, "");
 
             // Print link prefix
-            if (gemtext.link->uri.protocol != g_state->uri.protocol)
+            if (gemtext.link->uri.protocol != g_state.uri.protocol)
             {
                 LINE_PRINTF(" [%s %s] ",
                     l_index_str, gemtext.link->uri.protocol_str);
