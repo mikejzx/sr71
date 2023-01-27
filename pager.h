@@ -45,6 +45,9 @@ struct pager_buffer_line
     // Length of prefix that is applied to this line
     size_t prefix_len;
 
+    // For links: the length of the initial hang, and prefix.
+    size_t proto_len;
+
     // Link associated with line (index in the pager state links array)
     int link_index;
 };

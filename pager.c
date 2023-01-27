@@ -285,6 +285,8 @@ pager_paint(bool full)
                 moved = true; \
             }
 
+            const char *prefix_fmt = NULL, *addr_fmt = NULL;
+
             // Link highlighting
             if (line->link_index > -1 &&
                 line->link_index < g_pager->link_count &&
@@ -302,11 +304,15 @@ pager_paint(bool full)
                 // Print the colours
                 if (line->link_index == g_pager->link_index)
                 {
-                    tui_say(COLOUR_PAGER_LINK_SELECTED);
+                    prefix_fmt = COLOUR_PAGER_LINK_PROTOCOL_SELECTED;
+                    addr_fmt = COLOUR_PAGER_LINK_LOCATION_SELECTED;
+                    //tui_say(COLOUR_PAGER_LINK_SELECTED);
                 }
                 else
                 {
-                    tui_say(COLOUR_PAGER_LINK);
+                    prefix_fmt = COLOUR_PAGER_LINK_PROTOCOL;
+                    addr_fmt = COLOUR_PAGER_LINK_LOCATION;
+                    //tui_say(COLOUR_PAGER_LINK);
                 }
             }
 
@@ -316,7 +322,23 @@ pager_paint(bool full)
             // Move cursor to end of left margin, and fill the indent
             DRAW_START();
 
+        #if 0
             tui_sayn(line->s, line->bytes);
+        #else
+            if (prefix_fmt && addr_fmt)
+            {
+                tui_say(prefix_fmt);
+
+                tui_sayn(line->s, line->proto_len);
+
+                tui_say(addr_fmt);
+
+                tui_sayn(line->s + line->proto_len,
+                         line->bytes - line->proto_len);
+            }
+            else
+                tui_sayn(line->s, line->bytes);
+        #endif
 
             // Always clear the escapes after the line
             tui_say("\x1b[0m");

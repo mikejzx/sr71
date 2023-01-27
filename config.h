@@ -25,12 +25,17 @@ static const float CONTENT_MARGIN_BIAS = 0.5f;
  * Formatting, escapes, colours, etc.
  */
 #define COLOUR_STATUS_LINE "\x1b[2m"
-#define COLOUR_PAGER_LINK_SELECTED "\x1b[35m"
-#define COLOUR_PAGER_LINK "\x1b[34m"
+//#define COLOUR_PAGER_LINK_SELECTED "\x1b[35m"
+//#define COLOUR_PAGER_LINK "\x1b[34m"
 #define COLOUR_HEADING1 "\x1b[1;36m"
 #define COLOUR_HEADING2 "\x1b[36m"
 #define COLOUR_HEADING3 "\x1b[1m"
 #define COLOUR_HEADING4 "\x1b[1;34m"
+
+#define COLOUR_PAGER_LINK_PROTOCOL_SELECTED "\x1b[32m"
+#define COLOUR_PAGER_LINK_PROTOCOL "\x1b[32m"
+#define COLOUR_PAGER_LINK_LOCATION "\x1b[0m\x1b[4m"
+#define COLOUR_PAGER_LINK_LOCATION_SELECTED "\x1b[32m"
 
 // Whether to do fancy highlighting in URI of status line.  This will e.g. make
 // hostname in a brighter colour, and will highlight gopher item type.

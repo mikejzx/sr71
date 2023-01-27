@@ -215,7 +215,11 @@ typeset_gemtext(
         /*
          * We just abort rendering if we exceed the maximum buffer size, as
          * it's pretty tricky to perform the reallocation (as we use pointers
-         * to parts of the buffer so much).  TODO investigate better solution
+         * to parts of the buffer so much).
+         *
+         * TODO solution (we can achieve it by using relative offsets rather
+         *      than pointers)
+         *
          * The overflow would only occur (in rare cases with absolutely
          * enormous files) if huge indent amounts or link/list prefixes, etc.
          * add up.
@@ -521,11 +525,15 @@ typeset_gemtext(
                 LINE_PRINTF(" [%s %s] ",
                     l_index_str, gemtext.link->uri.protocol_str);
                 gemtext.hang += LINE_PRINTF_N_BYTES;
+
+                line->proto_len = gemtext.hang;
             }
             else
             {
                 LINE_PRINTF(" [%s] ", l_index_str);
                 gemtext.hang += LINE_PRINTF_N_BYTES;
+
+                line->proto_len = gemtext.hang;
             }
             gemtext.indent = 0;
             gemtext.indent_canon = 0;
@@ -807,18 +815,15 @@ typeset_gophermap(
         buffer_pos += n_bytes; \
     } while(0)
 #define LINE_STRNCPY_LIT(str) LINE_STRNCPY((str), strlen((str)))
-#define LINE_PRINTF(fmt, ...) \
-    do \
-    { \
-        const size_t n_bytes = \
-            snprintf(buffer_pos, \
-                buffer_end_pos - buffer_pos, \
-                (fmt), \
-                __VA_ARGS__); \
-        BUFFER_CHECK_SIZE(n_bytes); \
-        line->bytes += n_bytes; \
-        buffer_pos += n_bytes; \
-    } while(0);
+#define LINE_PRINTF(n_bytes, fmt, ...) \
+    (n_bytes) = \
+        snprintf(buffer_pos, \
+            buffer_end_pos - buffer_pos, \
+            (fmt), \
+            __VA_ARGS__); \
+    BUFFER_CHECK_SIZE((n_bytes)); \
+    line->bytes += (n_bytes); \
+    buffer_pos += (n_bytes);
 #define ADD_LINK() \
     {\
         pager_check_link_capacity(); \
@@ -855,6 +860,7 @@ typeset_gophermap(
 
         // Write display string to the buffer
         const char *item_display = rawline->s + 1;
+        // TODO dont use strcspn as it overreads
         const size_t item_display_len = strcspn(item_display, "\t");
         if (item_display + item_display_len >= rawline_end) continue;
 
@@ -876,6 +882,8 @@ typeset_gophermap(
         // Get item port
         uri.port = atoi(item_hostname + item_hostname_len + 1);
 
+        size_t n_bytes;
+
         // Check item type for selector
         switch(*rawline->s)
         {
@@ -893,28 +901,32 @@ typeset_gophermap(
         case 'd':
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d doc] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d doc] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
 
         // HTML file
         case 'h':
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d html] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d html] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
 
         // Sound file
         case 's':
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d snd] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d snd] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
 
         // File (usually text)
         case '0':
             uri.gopher_item = GOPHER_ITEM_TEXT;
             ADD_LINK();
-            LINE_PRINTF(" [%d txt] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d txt] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
 
         // Directory
@@ -926,14 +938,16 @@ typeset_gophermap(
                 strcat(uri.path, "/");
             }
             ADD_LINK();
-            LINE_PRINTF(" [%d dir] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d dir] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
 
         // Search
         case '7':
             uri.gopher_item = GOPHER_ITEM_SEARCH;
             ADD_LINK();
-            LINE_PRINTF(" [%d search] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d search] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
 
         // Binary files
@@ -942,14 +956,16 @@ typeset_gophermap(
         case '2':
             uri.gopher_item = GOPHER_ITEM_BIN;
             ADD_LINK();
-            LINE_PRINTF(" [%d bin] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d bin] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
 
         // Unknown/unsupported item type
         default:
             uri.gopher_item = GOPHER_ITEM_UNSUPPORTED;
             ADD_LINK();
-            LINE_PRINTF(" [%d unsupported] ", line->link_index);
+            LINE_PRINTF(n_bytes, " [%d unsupported] ", line->link_index);
+            line->proto_len = n_bytes;
             break;
         }
 
