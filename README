@@ -1,6 +1,17 @@
 sr71
 ====
 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+NOTE: there are plans for a full re-write of sr71 to address specific flaws in
+      the program and serious security concerns.  The repository will at some
+      point be migrated to:
+
+        https://git.skec.site/pub/sr71.git
+
+      The software is highly experimental and in it's current state should be
+      considered alpha-/prototype-quality.  Use at your own risk!
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 A  terminal small-Internet client.  Currently implements  both  the  Gemini  and
 Gopher protocols.
 
